@@ -74,7 +74,7 @@ Files failing any gate → `quarantine/` directory with metadata
 ## ADR-003: Preserve immutable raw landing zone during validation
 
 **Date:** 2026-05-26  
-**Status:** Proposed
+**Status:** Accepted
 
 ### Context
 
@@ -127,3 +127,28 @@ mutating the raw ingestion zone.
     - operationally dangerous
     - destroys forensic evidence
     - prevents future validator improvements from recovering false positives
+
+## ADR-004: Use date-partitioned S3 prefixes for Bhavcopy landing zones
+
+**Date:** 2026-05-27  
+**Status:** Accepted
+
+### Context
+Project 1 now has a local validation workflow that separates files into
+`raw/`, `validated/`, and `quarantine/`. The next stage is to prepare the
+pipeline for cloud storage without losing the validation-first contract.
+
+Bhavcopy files are date-addressable by filename, and downstream processing
+will often filter by trading date. A flat S3 layout would make partition
+selection, backfills, and cost reasoning harder as the dataset grows.
+
+### Decision
+Use date-partitioned S3 prefixes for NSE Bhavcopy files.
+
+Primary prefix pattern:
+
+```text
+s3://<bucket-name>/raw/nse_bhavcopy/year=YYYY/month=MM/day=DD/<filename>
+
+s3://<bucket-name>/validated/nse_bhavcopy/year=YYYY/month=MM/day=DD/<filename>
+s3://<bucket-name>/quarantine/nse_bhavcopy/year=YYYY/month=MM/day=DD/<filename>
