@@ -141,3 +141,17 @@ depending on calendar structure and trading schedule.
 
 Validator now operationally enforces:
 filename trading date == internal DATE1 consistency.
+
+## 2026-05-27 — Added validated-stage routing to Bhavcopy validation workflow
+
+Updated `scripts/validate_bhavcopy.py` so files that pass validation are copied
+to `validated/`, while files that fail validation are moved to `quarantine/`.
+
+After rerunning the validation workflow, final folder counts were:
+
+- `raw/`: 1234 files
+- `validated/`: 1234 files
+- `quarantine/`: 586 files
+
+This establishes `validated/` as the safe next-stage input for staging/S3 upload,
+while `raw/` remains the local source copy for valid files.

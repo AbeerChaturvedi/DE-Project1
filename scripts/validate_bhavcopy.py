@@ -5,6 +5,7 @@ import pandas as pd
 BASE_DIR = Path(__file__).resolve().parent.parent
 RAW_DIR = BASE_DIR/"raw"
 QUARANTINE_DIR = BASE_DIR/"quarantine"
+VALIDATED_DIR = BASE_DIR / "validated"
 
 MIN_FILE_SIZE_BYTES = 50_000
 MAX_FILE_SIZE_BYTES = 500_000
@@ -75,6 +76,17 @@ def validate_date_consistency(file_path):
             f"Internal date: {actual_date}"
         )
     
+def copy_to_validated(file_path):
+    VALIDATED_DIR.mkdir(exist_ok=True)
+    
+    destination = VALIDATED_DIR/file_path.name
+    
+    if destination.exists():
+        print(f"Already validated, skipping copy: {file_path.name}")
+        return
+    shutil.copy2(file_path, destination)
+    print(f"VALIDATED: {file_path.name}")
+    
 def quarantine_file(file_path, reason):
     QUARANTINE_DIR.mkdir(exist_ok=True)
     destination = QUARANTINE_DIR/file_path.name
@@ -87,13 +99,14 @@ def process_file(file_path):
         validate_file_size(file_path)
         validate_header(file_path)
         validate_date_consistency(file_path)
+        copy_to_validated(file_path)
         
         print(f"Valid: {file_path.name}")
     except Exception as e:
         quarantine_file(file_path, str(e))
         
 def main():
-    files = RAW_DIR.glob("*.csv")
+    files = sorted(RAW_DIR.glob("*.csv"))
     for file_path in files:
         process_file(file_path)
         
