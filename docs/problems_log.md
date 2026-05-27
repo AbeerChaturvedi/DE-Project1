@@ -155,3 +155,19 @@ After rerunning the validation workflow, final folder counts were:
 
 This establishes `validated/` as the safe next-stage input for staging/S3 upload,
 while `raw/` remains the local source copy for valid files.
+
+## 2026-05-27 — Verified one-file S3 upload from validated zone
+
+Created `scripts/upload_validated_to_s3.py` to convert validated Bhavcopy
+filenames into date-partitioned S3 keys and upload one file using the limited
+AWS CLI profile `project1-s3`.
+
+Verified upload of:
+
+- Local file: `validated/cm01Apr2022bhav.csv`
+- S3 path: `s3://project1-market-data-reconciliation-abeer-20260527/validated/nse_bhavcopy/year=2022/month=04/day=01/cm01Apr2022bhav.csv`
+- Object size: 251415 bytes
+- Storage class: STANDARD
+
+Reran the script and confirmed idempotency: existing object was detected and
+the upload was skipped instead of blindly overwriting.
