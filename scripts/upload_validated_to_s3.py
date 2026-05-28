@@ -3,12 +3,12 @@ import pandas as pd
 import boto3
 from botocore.exceptions import ClientError
 
-BASE_DIR = Path(__file__).resolve().parent.parent
+BASE_DIR = Path(__file__).resolve().parent.parent #resolve gives full script path → scripts/ → project root
 VALIDATED_DIR = BASE_DIR / "validated"
 
 BUCKET_NAME = "project1-market-data-reconciliation-abeer-20260527"
-AWS_PROFILE = "project1-s3"
-
+AWS_PROFILE = "project1-s3" #tells to use limited IAM profile instead of default/admin credentials
+MAX_FILES_TO_UPLOAD = 5
 
 def extract_date_from_file_name(file_path):
     filename = file_path.stem
@@ -70,9 +70,15 @@ def main():
     session = boto3.Session(profile_name=AWS_PROFILE)
     s3_client = session.client("s3")
 
-    sample_file = sorted(VALIDATED_DIR.glob("*.csv"))[0]
-
-    upload_file_to_s3(s3_client, sample_file)
+    validated_files = sorted(VALIDATED_DIR.glob("*.csv"))
+    
+    files_to_upload = validated_files[:MAX_FILES_TO_UPLOAD]
+    
+    print(f"Found {len(validated_files)} validated files. ")
+    print(f"Uploading first {len(files_to_upload)} files.")
+    
+    for file_path in files_to_upload:
+        upload_file_to_s3(s3_client, file_path)
 
 
 if __name__ == "__main__":

@@ -171,3 +171,23 @@ Verified upload of:
 
 Reran the script and confirmed idempotency: existing object was detected and
 the upload was skipped instead of blindly overwriting.
+
+## 2026-05-28 — Verified controlled batch upload to S3
+
+Updated `scripts/upload_validated_to_s3.py` from one-file upload to a controlled
+batch upload using `MAX_FILES_TO_UPLOAD = 5`.
+
+First batch run found 1234 validated files. The script skipped the previously
+uploaded file and uploaded four additional files to date-partitioned S3 prefixes:
+
+- `cm01Apr2024bhav.csv`
+- `cm01Apr2025bhav.csv`
+- `cm01Apr2026bhav.csv`
+- `cm01Aug2022bhav.csv`
+
+Reran the script and confirmed idempotency: all five selected files were detected
+as already existing in S3 and skipped.
+
+Verified that the expected five S3 keys exist under:
+
+`validated/nse_bhavcopy/`
