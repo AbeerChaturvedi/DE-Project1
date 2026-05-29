@@ -54,7 +54,7 @@ def upload_file_to_s3(s3_client, file_path):
 
     if object_exists(s3_client, BUCKET_NAME, s3_key):
         print(f"Already exists, skipping: s3://{BUCKET_NAME}/{s3_key}")
-        return
+        return "Skipped"
 
     s3_client.upload_file(
         str(file_path),
@@ -64,22 +64,41 @@ def upload_file_to_s3(s3_client, file_path):
 
     print(f"Uploaded: {file_path.name}")
     print(f"S3 path: s3://{BUCKET_NAME}/{s3_key}")
-
+    
+    return "Uploaded"
 
 def main():
     session = boto3.Session(profile_name=AWS_PROFILE)
     s3_client = session.client("s3")
 
     validated_files = sorted(VALIDATED_DIR.glob("*.csv"))
-    
     files_to_upload = validated_files[:MAX_FILES_TO_UPLOAD]
+    
+    uploaded_count = 0
+    skipped_count = 0
+    failed_count = 0
     
     print(f"Found {len(validated_files)} validated files. ")
     print(f"Uploading first {len(files_to_upload)} files.")
     
     for file_path in files_to_upload:
-        upload_file_to_s3(s3_client, file_path)
-
+        try:
+            result = upload_file_to_s3(s3_client, file_path)
+            
+            if result == "Uploaded":
+                uploaded_count += 1
+            elif result == "Skipped":
+                skipped_count += 1
+        
+        except Exception as error:
+            failed_count += 1
+            print(f"FAILED: {file_path.name}")
+            print(f"Reason: {error}")
+        
+    print("Upload summary")
+    print(f"Uploaded: {uploaded_count}")
+    print(f"Skipped: {skipped_count}")
+    print(f"Failed: {failed_count}")
 
 if __name__ == "__main__":
     main()
