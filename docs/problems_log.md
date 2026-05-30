@@ -191,3 +191,24 @@ as already existing in S3 and skipped.
 Verified that the expected five S3 keys exist under:
 
 `validated/nse_bhavcopy/`
+
+## 2026-05-30 — Increased controlled S3 batch upload to 20 files
+
+Updated `scripts/upload_validated_to_s3.py` to increase the controlled upload
+limit from 5 files to 20 files.
+
+First run summary:
+- Found 1234 validated files
+- Selected first 20 files for upload
+- Uploaded: 15
+- Skipped: 5
+- Failed: 0
+
+Second run summary:
+- Uploaded: 0
+- Skipped: 20
+- Failed: 0
+
+This confirms the upload workflow can safely scale beyond the initial 5-file test
+while preserving idempotency: rerunning the script detects existing S3 objects and
+skips them instead of duplicating or blindly overwriting data.
