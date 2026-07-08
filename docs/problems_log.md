@@ -212,3 +212,38 @@ Second run summary:
 This confirms the upload workflow can safely scale beyond the initial 5-file test
 while preserving idempotency: rerunning the script detects existing S3 objects and
 skips them instead of duplicating or blindly overwriting data.
+
+## 2026-07-08 — Increased controlled S3 batch upload to 50 files
+
+Returned to Project 1 after exam break and verified the existing project state.
+
+Pre-checks:
+- Git working tree was clean.
+- Local branch `main` matched `origin/main`.
+- Local counts remained stable:
+  - `raw/`: 1234 files
+  - `validated/`: 1234 files
+  - `quarantine/`: 586 files
+
+Verified existing S3 upload workflow:
+- Ran `scripts/upload_validated_to_s3.py` with the existing 20-file limit.
+- Result:
+  - Uploaded: 0
+  - Skipped: 20
+  - Failed: 0
+
+Increased controlled upload limit from 20 files to 50 files.
+
+First 50-file run:
+- Found 1234 validated files.
+- Selected first 50 files for upload.
+- Uploaded: 30
+- Skipped: 20
+- Failed: 0
+
+Second 50-file run:
+- Uploaded: 0
+- Skipped: 50
+- Failed: 0
+
+This confirms the upload workflow can safely scale from 20 to 50 files while preserving idempotency. Existing S3 objects are detected and skipped instead of being duplicated or blindly overwritten.

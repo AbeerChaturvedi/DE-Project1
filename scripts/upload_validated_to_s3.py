@@ -8,7 +8,7 @@ VALIDATED_DIR = BASE_DIR / "validated"
 
 BUCKET_NAME = "project1-market-data-reconciliation-abeer-20260527"
 AWS_PROFILE = "project1-s3" #tells to use limited IAM profile instead of default/admin credentials
-MAX_FILES_TO_UPLOAD = 20
+MAX_FILES_TO_UPLOAD = 50
 
 def extract_date_from_file_name(file_path):
     filename = file_path.stem
