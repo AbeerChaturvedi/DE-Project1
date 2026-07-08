@@ -269,7 +269,7 @@ python scripts\upload_validated_to_s3.py
 The script currently uploads a controlled batch using:
 
 ```python
-MAX_FILES_TO_UPLOAD = 20
+MAX_FILES_TO_UPLOAD = 50
 ```
 
 Rerunning the script should skip objects that already exist in S3.
