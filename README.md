@@ -72,7 +72,7 @@ The upload script:
 * builds date-partitioned S3 keys
 * checks whether an object already exists before uploading
 * skips existing files to preserve idempotency
-* currently uses a controlled safety limit of 20 files
+* currently uses a controlled safety limit of 50 files
 
 ## Current Architecture
 
