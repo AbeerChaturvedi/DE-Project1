@@ -259,6 +259,48 @@ Expected behavior:
 valid files   → copied to validated/
 invalid files → moved to quarantine/
 ```
+## Stage Validated NSE Bhavcopy Files
+
+```powershell
+python scripts\stage_nse_bhavcopy.py --limit 5
+```
+
+The staging script reads validated NSE Bhavcopy files and creates a cleaned local staged dataset.
+
+It currently:
+
+* strips whitespace from column names
+* strips whitespace from string values
+* replaces NSE sentinel value `-` with null
+* converts price, quantity, turnover, delivery, and trade-count columns to numeric types
+* adds `trading_date`
+* adds `source_file`
+* adds `source`
+* supports filtering by NSE `SERIES`
+
+Default behavior:
+
+```powershell
+python scripts\stage_nse_bhavcopy.py
+```
+
+Stages the first 5 validated files and keeps only `EQ` rows.
+
+Custom examples:
+
+```powershell
+python scripts\stage_nse_bhavcopy.py --limit 10
+python scripts\stage_nse_bhavcopy.py --limit 2 --series ALL
+python scripts\stage_nse_bhavcopy.py --limit 5 --series BE
+```
+
+Generated staged outputs are written under:
+
+```text
+staged/nse_bhavcopy/
+```
+
+The `staged/` folder is ignored by Git because it contains generated data.
 
 ## Upload Validated Files to S3
 

@@ -271,3 +271,37 @@ Validation tests:
 - Existing S3 objects were skipped correctly.
 
 This makes the upload script safer and more configurable for future automation through Airflow, GitHub Actions, or scheduled jobs.
+
+## 2026-07-08 — Created local NSE Bhavcopy staging script
+
+Created `scripts/stage_nse_bhavcopy.py` to convert validated NSE Bhavcopy CSV files into a cleaned local staged dataset.
+
+The script currently:
+- Reads files from `validated/`
+- Strips whitespace from column names
+- Strips whitespace from string values
+- Replaces NSE sentinel value `-` with null
+- Converts price, turnover, delivery, quantity, and trade-count columns to numeric types
+- Adds `trading_date`
+- Adds `source_file`
+- Adds `source`
+- Supports a configurable file limit through `--limit`
+- Supports NSE `SERIES` filtering through `--series`
+
+Tested EQ-only staging:
+- Command: `python scripts/stage_nse_bhavcopy.py --limit 5`
+- Files staged: 5
+- Rows before series filter: 13130
+- Rows after EQ filter: 10018
+- Output: `staged/nse_bhavcopy/nse_bhavcopy_eq_staged.csv`
+
+Tested ALL-series staging:
+- Command: `python scripts/stage_nse_bhavcopy.py --limit 2 --series ALL`
+- Files staged: 2
+- Rows before series filter: 4853
+- Rows after series filter: 4853
+- Output: `staged/nse_bhavcopy/nse_bhavcopy_all_staged.csv`
+
+Verified that EQ output contains only `EQ` rows and ALL output preserves multiple NSE series values.
+
+Added `staged/` to `.gitignore` so generated staged datasets are not committed to Git.
