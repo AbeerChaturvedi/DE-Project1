@@ -262,14 +262,28 @@ invalid files → moved to quarantine/
 
 ## Upload Validated Files to S3
 
+Default controlled upload:
+
 ```powershell
 python scripts\upload_validated_to_s3.py
 ```
 
-The script currently uploads a controlled batch using:
+The script uses a default controlled upload limit of 50 files:
 
 ```python
-MAX_FILES_TO_UPLOAD = 50
+DEFAULT_MAX_FILES_TO_UPLOAD = 50
+```
+
+You can override the limit from the command line:
+
+```powershell
+python scripts\upload_validated_to_s3.py --limit 10
+```
+
+Invalid limits are rejected:
+
+```powershell
+python scripts\upload_validated_to_s3.py --limit 0
 ```
 
 Rerunning the script should skip objects that already exist in S3.

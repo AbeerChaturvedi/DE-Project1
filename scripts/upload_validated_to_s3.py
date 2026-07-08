@@ -1,15 +1,36 @@
 from pathlib import Path
+import argparse
 import pandas as pd
 import boto3
 from botocore.exceptions import ClientError
 
-BASE_DIR = Path(__file__).resolve().parent.parent #resolve gives full script path → scripts/ → project root
+BASE_DIR = Path(__file__).resolve().parent.parent # scripts/ -> project root
 VALIDATED_DIR = BASE_DIR / "validated"
 
 BUCKET_NAME = "project1-market-data-reconciliation-abeer-20260527"
-AWS_PROFILE = "project1-s3" #tells to use limited IAM profile instead of default/admin credentials
-MAX_FILES_TO_UPLOAD = 50
+AWS_PROFILE = "project1-s3" # limited IAM profile, not default/admin credentials
 
+DEFAULT_MAX_FILES_TO_UPLOAD = 50
+
+def positive_int(value):
+    value = int(value)
+    if value <= 0:
+        raise argparse.ArgumentTypeError("Limit must be a positive integer")
+    return value
+
+def parse_args():
+    parser = argparse.ArgumentParser(
+        description = "Upload validated NSE Bhavcopy files to date-partitioned S3 paths."
+    )
+    parser.add_argument(
+        "--limit",
+        type = positive_int,
+        default = DEFAULT_MAX_FILES_TO_UPLOAD,
+        help = f"Maximum number of validated files to consider for upload. Default: {DEFAULT_MAX_FILES_TO_UPLOAD}",
+    )
+    
+    return parser.parse_args()
+    
 def extract_date_from_file_name(file_path):
     filename = file_path.stem
     date_portion = filename[2:11]
@@ -68,18 +89,22 @@ def upload_file_to_s3(s3_client, file_path):
     return "Uploaded"
 
 def main():
+    args = parse_args()
+    upload_limit = args.limit
+    
     session = boto3.Session(profile_name=AWS_PROFILE)
     s3_client = session.client("s3")
 
     validated_files = sorted(VALIDATED_DIR.glob("*.csv"))
-    files_to_upload = validated_files[:MAX_FILES_TO_UPLOAD]
+    files_to_upload = validated_files[:upload_limit]
     
     uploaded_count = 0
     skipped_count = 0
     failed_count = 0
     
-    print(f"Found {len(validated_files)} validated files. ")
-    print(f"Uploading first {len(files_to_upload)} files.")
+    print(f"Found {len(validated_files)} validated files.")
+    print(f"Upload limit: {upload_limit}")
+    print(f"Selected {len(files_to_upload)} files for upload.")
     
     for file_path in files_to_upload:
         try:

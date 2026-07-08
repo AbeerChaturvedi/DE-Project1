@@ -247,3 +247,27 @@ Second 50-file run:
 - Failed: 0
 
 This confirms the upload workflow can safely scale from 20 to 50 files while preserving idempotency. Existing S3 objects are detected and skipped instead of being duplicated or blindly overwritten.
+
+## 2026-07-08 — Added command-line upload limit to S3 uploader
+
+Updated `scripts/upload_validated_to_s3.py` to support a command-line upload limit
+using `argparse`.
+
+Previous behavior:
+- Upload limit was controlled by editing the script constant directly.
+
+New behavior:
+- Default limit remains 50 files.
+- Custom limit can be passed from the command line.
+
+Examples:
+- `python scripts/upload_validated_to_s3.py`
+- `python scripts/upload_validated_to_s3.py --limit 10`
+
+Validation tests:
+- Default run selected 50 files.
+- `--limit 10` selected 10 files.
+- `--limit 0` was rejected with an argument validation error.
+- Existing S3 objects were skipped correctly.
+
+This makes the upload script safer and more configurable for future automation through Airflow, GitHub Actions, or scheduled jobs.
