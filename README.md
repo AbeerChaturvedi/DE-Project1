@@ -2,31 +2,35 @@
 
 🚧 **Work in progress** — Project 1, finance-focused data engineering portfolio project.
 
-This project builds a validation-first market data pipeline for Indian equity data. The goal is to ingest, validate, stage, and eventually reconcile NSE Bhavcopy, BSE Bhavcopy, and secondary market-data sources such as yfinance or Alpha Vantage.
+This project builds a validation-first market data pipeline for Indian equity data. The goal is to ingest, validate, stage, quality-check, and eventually reconcile NSE Bhavcopy, BSE Bhavcopy, and secondary market-data sources such as yfinance or Alpha Vantage.
 
-The project focuses on data engineering correctness rather than dashboards: file validation, quarantine handling, idempotent uploads, cloud staging, reconciliation design, and point-in-time correctness.
+The project focuses on data engineering correctness rather than dashboards: file validation, quarantine handling, idempotent uploads, cloud staging, local staging, data-quality checks, reconciliation design, and point-in-time correctness.
 
 ## What This Project Demonstrates
 
 * Validation-first ingestion of real financial data
 * Handling messy exchange archive behavior
-* Separation of raw, validated, and quarantined data zones
+* Separation of raw, validated, quarantined, and staged data zones
 * Date-partitioned cloud object storage on S3
 * Least-privilege AWS access for upload scripts
 * Idempotent upload behavior
+* Command-line configurable scripts using `argparse`
+* Local staging of validated market data
+* Staged-data quality checks
 * Documentation of data-quality findings and engineering decisions
 * Foundation for future NSE/BSE/secondary-source reconciliation
 
 ## Current Project State
 
-Project 1 currently has a working local validation workflow for NSE Bhavcopy files and a controlled S3 upload workflow for validated files.
+Project 1 currently has a working local validation workflow, controlled S3 upload workflow, local NSE staging script, and staged-data quality-check script for NSE Bhavcopy files.
 
-### Local Staging Zones
+### Local Data Zones
 
 ```text
 raw/          → valid source files retained locally
 validated/    → files that passed validation and are safe for staging/upload
 quarantine/   → files rejected by validation gates
+staged/       → generated cleaned datasets created from validated files
 ```
 
 Current local counts:
@@ -36,6 +40,8 @@ raw/          = 1234 files
 validated/    = 1234 files
 quarantine/   = 586 files
 ```
+
+The `validated/` and `staged/` folders are ignored by Git because they contain generated or data-heavy outputs.
 
 ## Cloud Staging
 
@@ -72,7 +78,8 @@ The upload script:
 * builds date-partitioned S3 keys
 * checks whether an object already exists before uploading
 * skips existing files to preserve idempotency
-* currently uses a controlled safety limit of 50 files
+* uses a default controlled safety limit of 50 files
+* supports command-line upload limits with `--limit`
 
 ## Current Architecture
 
@@ -85,11 +92,21 @@ validation gates
         ↓
 validated/        quarantine/
         ↓
-S3 validated/nse_bhavcopy/year=YYYY/month=MM/day=DD/
+local staging
         ↓
-future staging and reconciliation layer
+staged/nse_bhavcopy/
+        ↓
+staged-data quality checks
+        ↓
+future reconciliation layer
         ↓
 future warehouse / dbt / analytical queries
+
+validated/
+        ↓
+controlled idempotent S3 upload
+        ↓
+S3 validated/nse_bhavcopy/year=YYYY/month=MM/day=DD/
 ```
 
 ## Validation Workflow
@@ -145,10 +162,11 @@ Current major decisions:
 * NSE Bhavcopy is the canonical primary source.
 * yfinance and Alpha Vantage are secondary reconciliation sources.
 * NSE archive output is treated as untrusted until validated.
-* Raw, validated, and quarantine zones are kept separate.
+* Raw, validated, quarantine, and staged zones are kept separate.
 * Validated files are uploaded to S3 using date-partitioned prefixes.
 * Upload scripts must be idempotent.
 * Project scripts must not use root/admin AWS credentials.
+* Generated staged outputs are not committed to Git.
 
 ## Repository Structure
 
@@ -159,12 +177,15 @@ project1-market-data-reconciliation/
 │   ├── decisions.md
 │   └── problems_log.md
 ├── raw/
-├── validated/
+├── validated/                      # generated/data folder, ignored by Git
 ├── quarantine/
+├── staged/                         # generated locally, ignored by Git
 ├── scripts/
 │   ├── load_bhavcopy_data.py
 │   ├── validate_bhavcopy.py
-│   └── upload_validated_to_s3.py
+│   ├── upload_validated_to_s3.py
+│   ├── stage_nse_bhavcopy.py
+│   └── check_staged_nse_quality.py
 ├── requirements.txt
 └── README.md
 ```
@@ -177,7 +198,7 @@ project1-market-data-reconciliation/
 * [x] Validation workflow implemented
 * [x] Invalid files routed to `quarantine/`
 * [x] Valid files copied to `validated/`
-* [x] `.gitignore` updated to avoid committing generated validated data
+* [x] `.gitignore` updated to avoid committing generated validated/staged data
 * [x] S3 bucket created for cloud staging
 * [x] Least-privilege IAM policy created
 * [x] Limited S3 uploader IAM user created
@@ -185,7 +206,18 @@ project1-market-data-reconciliation/
 * [x] One-file S3 upload tested
 * [x] Controlled 5-file batch upload tested
 * [x] Controlled 20-file batch upload tested
+* [x] Controlled 50-file batch upload tested
 * [x] Upload idempotency verified
+* [x] Command-line upload limit added with `--limit`
+* [x] Local NSE staging script created
+* [x] EQ-series staged output tested
+* [x] ALL-series staged output tested
+* [x] `staged/` added to `.gitignore`
+* [x] Staged NSE data quality-check script created
+* [x] 20-file staged EQ sample quality checked
+* [x] Duplicate symbol-date check passed
+* [x] OHLC sanity checks passed
+* [x] Volume sanity checks passed
 * [ ] BSE Bhavcopy ingestion
 * [ ] Secondary-source ingestion using yfinance / Alpha Vantage
 * [ ] First reconciliation logic
@@ -259,6 +291,7 @@ Expected behavior:
 valid files   → copied to validated/
 invalid files → moved to quarantine/
 ```
+
 ## Stage Validated NSE Bhavcopy Files
 
 ```powershell
@@ -276,6 +309,7 @@ It currently:
 * adds `trading_date`
 * adds `source_file`
 * adds `source`
+* supports configurable file limits with `--limit`
 * supports filtering by NSE `SERIES`
 
 Default behavior:
@@ -301,6 +335,42 @@ staged/nse_bhavcopy/
 ```
 
 The `staged/` folder is ignored by Git because it contains generated data.
+
+## Check Staged NSE Data Quality
+
+```powershell
+python scripts\check_staged_nse_quality.py
+```
+
+The quality-check script reads the staged NSE Bhavcopy output and verifies whether the cleaned data is logically usable for downstream reconciliation.
+
+It currently checks:
+
+* row count and column count
+* date range
+* unique trading dates
+* unique symbols
+* `SERIES` distribution
+* null values
+* duplicate `trading_date` + `SYMBOL` rows
+* invalid OHLC relationships
+* zero or negative traded quantity
+
+Current 20-file EQ sample result:
+
+```text
+Rows: 39202
+Columns: 18
+Unique trading dates: 20
+Unique symbols: 2889
+Duplicate symbol-date rows: 0
+HIGH_PRICE < LOW_PRICE rows: 0
+OPEN_PRICE outside HIGH/LOW rows: 0
+CLOSE_PRICE outside HIGH/LOW rows: 0
+Rows with TTL_TRD_QNTY <= 0: 0
+```
+
+This confirms that the staged EQ sample is clean enough to use as input for future reconciliation logic.
 
 ## Upload Validated Files to S3
 
@@ -334,19 +404,22 @@ Rerunning the script should skip objects that already exist in S3.
 
 This project does not yet perform full NSE/BSE reconciliation.
 
+It does not yet ingest BSE Bhavcopy or secondary-source data.
+
 It does not yet build the final warehouse schema.
 
 It does not yet include Airflow orchestration or dbt models.
 
-Those are planned later stages. The current milestone is focused on building a reliable ingestion, validation, and cloud-staging foundation.
+Those are planned later stages. The current milestone is focused on building a reliable ingestion, validation, staging, quality-checking, and cloud-staging foundation.
 
 ## Next Steps
 
-1. Keep S3 uploads controlled and idempotent.
-2. Add BSE or secondary-source ingestion.
-3. Define the first reconciliation rules in code.
-4. Build a staging layer for comparison queries.
-5. Add PySpark for scalable reconciliation.
-6. Add dbt models for dimensional modelling.
-7. Build an SCD2 instrument master.
-8. Add orchestration and warehouse destination.
+1. Stage and quality-check a larger NSE sample.
+2. Decide the second source: BSE Bhavcopy or secondary-source ingestion.
+3. Add BSE or secondary-source ingestion.
+4. Define the first reconciliation rules in code.
+5. Build a staging layer for comparison queries.
+6. Add PySpark for scalable reconciliation.
+7. Add dbt models for dimensional modelling.
+8. Build an SCD2 instrument master.
+9. Add orchestration and warehouse destination.
