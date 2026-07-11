@@ -452,3 +452,41 @@ Result:
 
 This confirms that the staged 20-file EQ sample passes basic market-data
 sanity checks and is suitable for the next reconciliation-preparation step.
+
+---
+
+## 2026-07-11 — Verified staged NSE data quality on 100-file sample
+
+Scaled the local NSE staging workflow from a 20-file sample to a 100-file sample.
+
+Command used:
+
+- `python scripts/stage_nse_bhavcopy.py --limit 100`
+
+Staging result:
+
+- Files staged: 100
+- Rows before EQ series filter: 252501
+- Rows after EQ series filter: 188743
+- Output: `staged/nse_bhavcopy/nse_bhavcopy_eq_staged.csv`
+
+Ran staged-data quality checks using:
+
+- `python scripts/check_staged_nse_quality.py`
+
+Quality-check result:
+
+- Rows: 188743
+- Columns: 18
+- Date range: 2021-06-01 to 2026-04-02
+- Unique trading dates: 100
+- Unique symbols: 2925
+- SERIES: EQ only
+- Null values: 0
+- Duplicate symbol-date rows: 0
+- HIGH_PRICE < LOW_PRICE rows: 0
+- OPEN_PRICE outside HIGH/LOW rows: 0
+- CLOSE_PRICE outside HIGH/LOW rows: 0
+- Rows with TTL_TRD_QNTY <= 0: 0
+
+This confirms that the NSE staging and quality-check workflow scales from 20 files to 100 files without introducing duplicate symbol-date rows, OHLC violations, null-value issues, or invalid volume rows.

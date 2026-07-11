@@ -214,7 +214,7 @@ project1-market-data-reconciliation/
 * [x] ALL-series staged output tested
 * [x] `staged/` added to `.gitignore`
 * [x] Staged NSE data quality-check script created
-* [x] 20-file staged EQ sample quality checked
+* [x] 100-file staged EQ sample quality checked
 * [x] Duplicate symbol-date check passed
 * [x] OHLC sanity checks passed
 * [x] Volume sanity checks passed
@@ -356,13 +356,14 @@ It currently checks:
 * invalid OHLC relationships
 * zero or negative traded quantity
 
-Current 20-file EQ sample result:
+Current 100-file EQ sample result:
 
 ```text
-Rows: 39202
+Rows: 188743
 Columns: 18
-Unique trading dates: 20
-Unique symbols: 2889
+Date range: 2021-06-01 to 2026-04-02
+Unique trading dates: 100
+Unique symbols: 2925
 Duplicate symbol-date rows: 0
 HIGH_PRICE < LOW_PRICE rows: 0
 OPEN_PRICE outside HIGH/LOW rows: 0
