@@ -490,3 +490,81 @@ Quality-check result:
 - Rows with TTL_TRD_QNTY <= 0: 0
 
 This confirms that the NSE staging and quality-check workflow scales from 20 files to 100 files without introducing duplicate symbol-date rows, OHLC violations, null-value issues, or invalid volume rows.
+
+---
+
+## 2026-07-12 — Selected yfinance and completed one-symbol smoke test
+
+Selected yfinance as the secondary market-data source for the first
+reconciliation version.
+
+NSE Bhavcopy remains the authoritative primary source. Data downloaded through
+yfinance will be treated as an untrusted secondary source.
+
+Added `yfinance` to `requirements.txt`.
+
+Initial environment state:
+
+- Installed yfinance version: 0.2.55
+- First `RELIANCE.NS` request failed with `YFRateLimitError`
+- Error message indicated that Yahoo had rate-limited the request
+
+Upgraded yfinance:
+
+- Previous version: 0.2.55
+- Updated version: 1.5.1
+- Additional dependency installed: `curl_cffi`
+
+Performed one controlled retry using:
+
+- Yahoo ticker: `RELIANCE.NS`
+- Start date: `2026-03-01`
+- End date: `2026-04-03`
+- Interval: daily
+- `auto_adjust=False`
+- End date treated as exclusive
+
+Smoke-test result:
+
+- Download status: successful
+- Rows returned: 21
+- First returned date: `2026-03-02`
+- Last returned date: `2026-04-02`
+- Index type: `DatetimeIndex`
+- Index name: `Date`
+- Columns type: pandas `MultiIndex`
+- Null values: 0
+
+Returned fields:
+
+- `Adj Close`
+- `Close`
+- `High`
+- `Low`
+- `Open`
+- `Volume`
+
+Observed data types:
+
+- Price fields: `float64`
+- Volume: `int64`
+
+Important findings:
+
+1. yfinance returns a two-level column structure containing price field and
+   ticker name. The ingestion script must flatten this structure.
+
+2. Both `Close` and `Adj Close` are returned when `auto_adjust=False`.
+
+3. NSE Bhavcopy reconciliation should use raw `Close`, not `Adj Close`,
+   because adjusted prices may include corporate-action adjustments.
+
+4. Returned prices contain normal floating-point precision differences, such
+   as `1389.400024`. Reconciliation should use numeric tolerances rather than
+   exact floating-point equality.
+
+5. External-source ingestion must handle rate limiting explicitly and must not
+   silently accept an empty DataFrame as a successful download.
+
+The smoke test confirms that `RELIANCE.NS` can be normalized and compared with
+the staged NSE Bhavcopy schema.

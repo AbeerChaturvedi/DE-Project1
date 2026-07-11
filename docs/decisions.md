@@ -152,3 +152,164 @@ s3://<bucket-name>/raw/nse_bhavcopy/year=YYYY/month=MM/day=DD/<filename>
 
 s3://<bucket-name>/validated/nse_bhavcopy/year=YYYY/month=MM/day=DD/<filename>
 s3://<bucket-name>/quarantine/nse_bhavcopy/year=YYYY/month=MM/day=DD/<filename>
+
+---
+
+## ADR-005 — Use yfinance as the secondary reconciliation source
+
+**Status:** Accepted
+**Date:** 2026-07-12
+
+### Context
+
+Project 1 requires a secondary market-data source so that the staged NSE
+Bhavcopy dataset can be compared against an independently delivered dataset.
+
+The available options considered were:
+
+1. BSE Bhavcopy
+2. yfinance
+3. Alpha Vantage
+
+NSE Bhavcopy remains the authoritative primary source for the project.
+
+### Decision
+
+Use yfinance as the initial secondary source for Project 1 V1.
+
+The first reconciliation prototype will compare NSE-listed EQ securities from
+the staged NSE Bhavcopy dataset with corresponding Yahoo Finance tickers
+downloaded through yfinance.
+
+Example symbol mapping:
+
+- NSE symbol: `RELIANCE`
+- Yahoo Finance ticker: `RELIANCE.NS`
+
+yfinance data will be treated as an untrusted secondary source rather than as
+authoritative market data.
+
+### Initial reconciliation scope
+
+The first prototype will use:
+
+- 10 liquid NSE EQ symbols
+- Approximately 30–60 trading dates
+- Daily interval data
+- Explicit start and end dates
+- Normalized symbol and trading-date join keys
+
+The following fields will be compared:
+
+- Open price
+- High price
+- Low price
+- Close price
+- Volume
+
+The reconciliation output will classify records as:
+
+- matched
+- price mismatch
+- volume mismatch
+- missing in NSE
+- missing in yfinance
+- symbol mapping failure
+
+### Implementation rules
+
+The yfinance ingestion must:
+
+- use explicit NSE-to-Yahoo symbol mapping
+- use the `.NS` suffix for supported NSE-listed symbols
+- request daily data
+- set `auto_adjust=False`
+- use explicit start and end dates
+- account for the fact that the yfinance end date is exclusive
+- preserve the original Yahoo ticker
+- add a normalized NSE symbol
+- add source and ingestion metadata
+- retain missing-download and mapping failures
+- avoid silently discarding failed symbols
+
+Setting `auto_adjust=False` disables yfinance's automatic OHLC adjustment.
+This makes the comparison policy explicit, but does not mean Yahoo data is
+identical to the original exchange feed. Adjustment behaviour and returned
+columns must still be inspected during the smoke test.
+
+### Reasons for choosing yfinance
+
+yfinance was selected because it provides the quickest route to building a
+working same-security, same-date reconciliation prototype.
+
+It allows the project to focus on:
+
+- secondary-source ingestion
+- symbol mapping
+- schema normalization
+- date alignment
+- source-specific metadata
+- tolerance-based comparison
+- mismatch classification
+- reconciliation reporting
+
+It also avoids the restrictive request limits associated with some free API
+services during the first version of the project.
+
+### Alternatives considered
+
+#### BSE Bhavcopy
+
+BSE Bhavcopy would provide an additional official Indian exchange dataset.
+
+It was not selected for V1 because NSE and BSE are different trading venues.
+Prices and volumes may legitimately differ between the exchanges, and a
+historical NSE-symbol-to-BSE-security-code mapping would be required.
+
+BSE remains a possible V2 extension for cross-exchange price and liquidity
+analysis.
+
+#### Alpha Vantage
+
+Alpha Vantage would provide useful experience with REST APIs, API keys,
+request limits, retries, and JSON or CSV responses.
+
+It was not selected for V1 because its free-tier request constraints and
+uncertain coverage of the required NSE symbol universe could slow down the
+reconciliation prototype.
+
+Alpha Vantage remains an optional future API-ingestion extension.
+
+### Consequences
+
+Positive consequences:
+
+- Faster path to the first reconciliation report
+- Same-security and same-date comparisons are possible
+- Straightforward Python integration
+- No API key is required for the initial prototype
+- The project gains secondary-source ingestion and normalization experience
+
+Negative consequences:
+
+- yfinance is not an official exchange feed
+- Yahoo ticker coverage may be incomplete
+- Some NSE symbols may require manual mapping
+- Corporate actions and price-adjustment policies may create mismatches
+- Downloads may occasionally fail or be rate-limited
+- Yahoo data must never silently replace authoritative NSE values
+
+### Validation criteria
+
+Before building the complete ingestion script, perform a one-symbol smoke test
+and verify:
+
+- the ticker downloads successfully
+- returned columns and index structure
+- date-range behaviour
+- data types
+- missing values
+- adjustment behaviour
+- whether `Close` and `Adj Close` are both returned
+- whether volume is available
+- whether the result can be normalized to the NSE staged schema
