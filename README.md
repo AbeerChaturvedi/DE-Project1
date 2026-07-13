@@ -2,27 +2,32 @@
 
 🚧 **Work in progress** — Project 1, finance-focused data engineering portfolio project.
 
-This project builds a validation-first market-data pipeline for Indian equity data. The goal is to ingest, validate, stage, quality-check, and reconcile official NSE Bhavcopy data against independently delivered secondary market data.
+This project builds a validation-first market-data pipeline for Indian equity data. Its purpose is to ingest, validate, stage, quality-check, and reconcile official NSE Bhavcopy data against independently delivered secondary market data.
 
-NSE Bhavcopy is the authoritative primary source for Project 1 V1. yfinance has been selected as the initial secondary source for same-security, same-date OHLCV reconciliation.
+NSE Bhavcopy is the authoritative primary source for Project 1 V1. yfinance is the initial secondary source for same-security, same-date OHLCV reconciliation.
 
-BSE Bhavcopy remains a possible future extension for cross-exchange price and liquidity analysis.
+BSE Bhavcopy remains a possible future V2 extension for cross-exchange price and liquidity analysis.
 
-The project focuses on data-engineering correctness rather than dashboards: file validation, quarantine handling, idempotent uploads, cloud staging, local staging, source normalization, data-quality checks, reconciliation design, traceability, and point-in-time correctness.
+The project focuses on data-engineering correctness rather than dashboards. Its main concerns are file validation, quarantine handling, idempotent uploads, cloud staging, local staging, source normalization, data-quality checks, failure reporting, reconciliation design, traceability, and point-in-time correctness.
 
 ## What This Project Demonstrates
 
 - Validation-first ingestion of real financial data
 - Handling unreliable exchange archive behaviour
+- Detection of structurally and semantically invalid market-data files
 - Separation of raw, validated, quarantined, and staged data zones
 - Date-partitioned cloud object storage on Amazon S3
 - Least-privilege AWS access for upload scripts
-- Idempotent upload behaviour
+- Idempotent S3 upload behaviour
 - Command-line configurable scripts using `argparse`
 - Local staging and normalization of validated market data
 - Chronological and date-range-based file selection
 - Staged-data quality checks
-- Secondary-source evaluation and smoke testing
+- Explicit NSE-to-Yahoo symbol mapping
+- Sequential secondary-source ingestion
+- Retry, request-delay, empty-result, and failure-report handling
+- Flattening and normalization of yfinance MultiIndex data
+- Exact cross-source trading-date coverage checks
 - Documentation of data-quality findings and engineering decisions
 - Foundation for NSE-versus-yfinance reconciliation
 
@@ -33,26 +38,32 @@ Project 1 currently has:
 - a working local NSE Bhavcopy validation workflow;
 - separate raw, validated, quarantine, and staged data zones;
 - a controlled and idempotent S3 upload workflow;
-- a local NSE staging script;
+- a local NSE staging and normalization script;
 - configurable NSE `SERIES` filtering;
-- chronological and inclusive date-range selection;
-- a staged-data quality-check script;
+- chronological file sorting;
+- inclusive NSE date-range selection;
+- a staged NSE data-quality-check script;
 - a documented secondary-source decision;
-- yfinance installed and tested using `RELIANCE.NS`;
-- a clean contiguous NSE dataset prepared for the first reconciliation prototype.
+- an explicit ten-symbol NSE-to-Yahoo mapping;
+- a reusable multi-symbol yfinance ingestion script;
+- sequential Yahoo downloads with controlled delays and retries;
+- normalized yfinance staged output;
+- a separate yfinance failed-symbol report;
+- a clean contiguous NSE dataset prepared for reconciliation;
+- a clean and date-aligned ten-symbol yfinance dataset.
 
-The reusable multi-symbol yfinance ingestion script and reconciliation layer have not yet been implemented.
+The first NSE-versus-yfinance reconciliation logic has not yet been implemented.
 
 ## Local Data Zones
 
 ```text
-raw/          → downloaded source files retained locally
+raw/          → retained local source files
 validated/    → files that passed validation and are safe for staging/upload
 quarantine/   → files rejected by validation gates
-staged/       → generated cleaned datasets created from validated files
+staged/       → generated cleaned and normalized datasets
 ```
 
-Current local counts:
+Current local NSE file counts:
 
 ```text
 raw/          = 1234 files
@@ -70,27 +81,41 @@ NSE Bhavcopy download
 raw/
         ↓
 validation gates
-        ├──────────────→ quarantine/
+        ├────────────────────────→ quarantine/
         ↓
 validated/
-        ├──────────────→ controlled idempotent S3 upload
-        │                       ↓
-        │             S3 validated/nse_bhavcopy/
+        ├────────────────────────→ controlled idempotent S3 upload
+        │                                  ↓
+        │                        S3 validated/nse_bhavcopy/
         │
         ↓
 local NSE staging and normalization
         ↓
 staged/nse_bhavcopy/
         ↓
-staged-data quality checks
+staged NSE quality checks
         ↓
-future reconciliation layer
-        ↑
-future normalized yfinance staging
-        ↑
-yfinance secondary-source ingestion
+authoritative NSE reconciliation input
+        │
+        │
+        ├──────────────────────────────────────────────┐
+                                                       ↓
+                                              future reconciliation
+                                                       ↑
+        ┌──────────────────────────────────────────────┘
+        │
+config/yfinance_symbol_map.csv
         ↓
-future matched, mismatched, and missing-record reports
+multi-symbol yfinance ingestion
+        ├────────────────────────→ failed-symbol report
+        ↓
+MultiIndex flattening and normalization
+        ↓
+staged/yfinance/
+        ↓
+validated Yahoo reconciliation input
+        ↓
+future matched, mismatched, missing, and failure reports
         ↓
 future PySpark / dbt / warehouse layers
 ```
@@ -136,7 +161,11 @@ Documented findings include:
 - some fields use `-` as a missing or not-applicable sentinel;
 - `SERIES` contains many instrument categories beyond ordinary equities;
 - weekday logic alone cannot identify valid trading days because special Saturday sessions can occur;
-- filename dates must be verified against the internal `DATE1` value.
+- filename dates must be verified against the internal `DATE1` value;
+- third-party market-data sources can return rate-limit errors;
+- empty DataFrames must not be silently treated as successful downloads;
+- yfinance returns ticker data using pandas MultiIndex columns;
+- adjusted and unadjusted closing prices must be handled explicitly.
 
 Detailed findings are maintained in:
 
@@ -158,7 +187,7 @@ Current major decisions include:
 - NSE Bhavcopy is the authoritative primary source.
 - NSE archive output is treated as untrusted until it passes validation.
 - Raw, validated, quarantine, and staged zones remain separate.
-- Raw source files are preserved during validation.
+- Raw source files are retained during the valid-file workflow.
 - Validated files are uploaded to S3 using date-partitioned prefixes.
 - Upload scripts must be idempotent.
 - Project scripts must not use root or administrator AWS credentials.
@@ -166,6 +195,8 @@ Current major decisions include:
 - yfinance is the initial secondary source for Project 1 V1.
 - yfinance data is treated as an untrusted secondary source.
 - Raw Yahoo `Close`, not `Adj Close`, will be compared with NSE `CLOSE_PRICE`.
+- Yahoo download failures must be recorded rather than silently discarded.
+- yfinance downloads are processed sequentially to reduce rate-limit risk.
 - BSE Bhavcopy remains a possible V2 cross-exchange extension.
 - Alpha Vantage remains an optional future API-ingestion extension.
 
@@ -173,6 +204,8 @@ Current major decisions include:
 
 ```text
 project1-market-data-reconciliation/
+├── config/
+│   └── yfinance_symbol_map.csv
 ├── docs/
 │   ├── data_quality_findings.md
 │   ├── decisions.md
@@ -181,12 +214,15 @@ project1-market-data-reconciliation/
 ├── validated/                      # generated/data folder, ignored by Git
 ├── quarantine/
 ├── staged/                         # generated locally, ignored by Git
+│   ├── nse_bhavcopy/
+│   └── yfinance/
 ├── scripts/
 │   ├── load_bhavcopy_data.py
 │   ├── validate_bhavcopy.py
 │   ├── upload_validated_to_s3.py
 │   ├── stage_nse_bhavcopy.py
-│   └── check_staged_nse_quality.py
+│   ├── check_staged_nse_quality.py
+│   └── download_yfinance_data.py
 ├── requirements.txt
 └── README.md
 ```
@@ -255,9 +291,9 @@ It:
 - [x] ALL-series staged output tested
 - [x] Staged NSE data-quality-check script created
 - [x] 100-file EQ sample quality checked
-- [x] Duplicate symbol-date checks passed
-- [x] OHLC sanity checks passed
-- [x] Volume sanity checks passed
+- [x] Duplicate NSE symbol-date checks passed
+- [x] NSE OHLC sanity checks passed
+- [x] NSE volume sanity checks passed
 - [x] Chronological NSE file sorting implemented
 - [x] Inclusive NSE date-range selection implemented
 - [x] Contiguous 21-trading-day NSE sample produced
@@ -265,16 +301,37 @@ It:
 - [x] yfinance added to project dependencies
 - [x] One-symbol `RELIANCE.NS` smoke test completed
 - [x] Yahoo MultiIndex schema and rate-limit behaviour documented
+- [x] Initial ten NSE reconciliation symbols selected
+- [x] Explicit NSE-to-Yahoo symbol-mapping file created
+- [x] Symbol-mapping file validated
+- [x] Reusable multi-symbol yfinance ingestion script created
+- [x] Sequential Yahoo downloading implemented
+- [x] Controlled retries and request delays implemented
+- [x] Empty-result detection implemented
+- [x] Failed-symbol reporting implemented
+- [x] yfinance MultiIndex flattening implemented
+- [x] yfinance data normalized into a stable staged schema
+- [x] One-symbol yfinance ingestion tested
+- [x] Three-symbol yfinance ingestion tested
+- [x] Ten-symbol yfinance ingestion tested
+- [x] Ten-symbol Yahoo sample validated for schema and null values
+- [x] Ten-symbol Yahoo duplicate symbol-date check passed
+- [x] Ten-symbol Yahoo OHLC checks passed
+- [x] Ten-symbol Yahoo volume checks passed
+- [x] Exact NSE-versus-Yahoo trading-date coverage verified
 
 ### In Progress or Planned
 
-- [ ] Create the initial NSE-to-Yahoo symbol mapping
-- [ ] Build reusable multi-symbol yfinance ingestion
-- [ ] Normalize yfinance data into a staged schema
-- [ ] Add yfinance staged-data quality checks
+- [ ] Create a reusable yfinance staged-data quality-check script
 - [ ] Implement first NSE-versus-yfinance reconciliation logic
-- [ ] Generate matched, mismatched, missing, and failed-symbol reports
-- [ ] Add tolerance-based price comparisons
+- [ ] Define tolerance-based OHLC comparison rules
+- [ ] Define volume-comparison rules
+- [ ] Generate matched-record reports
+- [ ] Generate price-mismatch reports
+- [ ] Generate volume-mismatch reports
+- [ ] Generate missing-in-NSE and missing-in-Yahoo reports
+- [ ] Add reconciliation summary metrics
+- [ ] Scale reconciliation beyond the initial ten symbols
 - [ ] Add PySpark reconciliation layer
 - [ ] Add dbt dimensional models
 - [ ] Build an SCD2 instrument master
@@ -510,12 +567,36 @@ These results confirm that the staged NSE dataset is suitable as the authoritati
 
 yfinance was selected as the initial secondary source for Project 1 V1.
 
-Example symbol mapping:
+The explicit NSE-to-Yahoo symbol mapping is stored in:
 
 ```text
-NSE symbol:    RELIANCE
-Yahoo ticker:  RELIANCE.NS
+config/yfinance_symbol_map.csv
 ```
+
+The initial mappings are:
+
+```text
+RELIANCE   → RELIANCE.NS
+HDFCBANK   → HDFCBANK.NS
+ICICIBANK  → ICICIBANK.NS
+SBIN       → SBIN.NS
+TCS        → TCS.NS
+INFY       → INFY.NS
+ITC        → ITC.NS
+TATASTEEL  → TATASTEEL.NS
+ONGC       → ONGC.NS
+ASHOKLEY   → ASHOKLEY.NS
+```
+
+These symbols were selected because:
+
+- each appears on all 21 NSE trading dates in the reconciliation window;
+- each has valid close-price and volume data;
+- they represent multiple industries and price ranges;
+- each has a clear Yahoo `.NS` mapping;
+- the sample avoids relying only on extremely high-volume speculative securities or exchange-traded products.
+
+### Initial smoke test
 
 The first smoke test used:
 
@@ -554,13 +635,169 @@ Volume
 Important findings:
 
 - yfinance returns ticker data using a two-level pandas `MultiIndex`;
-- the future ingestion script must flatten and normalize these columns;
+- the ingestion script must flatten and normalize these columns;
 - `Close` and `Adj Close` are both returned when `auto_adjust=False`;
 - NSE `CLOSE_PRICE` will be compared with Yahoo `Close`;
-- `Adj Close` will be retained only as additional metadata;
+- `Adj Close` is retained only as additional metadata;
 - floating-point differences require tolerance-based comparisons;
 - empty DataFrames must not be silently treated as successful downloads;
 - external-source rate limits and failures must be recorded explicitly.
+
+## Reusable Multi-Symbol yfinance Ingestion
+
+The reusable downloader is:
+
+```text
+scripts/download_yfinance_data.py
+```
+
+The downloader:
+
+- reads the NSE-to-Yahoo symbol-mapping CSV;
+- validates required mapping columns;
+- rejects blank or missing mappings;
+- rejects duplicate NSE symbols;
+- rejects duplicate Yahoo tickers;
+- verifies that Yahoo tickers end in `.NS`;
+- accepts an inclusive `--start-date`;
+- accepts an exclusive `--end-date`;
+- supports controlled symbol selection with `--limit`;
+- downloads symbols sequentially;
+- waits between symbols to reduce rate-limit risk;
+- performs controlled retries;
+- rejects empty DataFrames;
+- flattens yfinance MultiIndex columns;
+- normalizes Yahoo data into a stable staged schema;
+- preserves raw `Close` and `Adj Close` separately;
+- converts prices and volume into numeric types;
+- records NSE symbol, Yahoo ticker, and source metadata;
+- writes all successful rows into one staged CSV;
+- writes failed symbols into a separate failure report.
+
+### Command-line options
+
+View the available options:
+
+```powershell
+python scripts\download_yfinance_data.py --help
+```
+
+Important options include:
+
+```text
+--mapping
+--start-date
+--end-date
+--limit
+--max-attempts
+--retry-delay
+--request-delay
+```
+
+### One-symbol test
+
+```powershell
+python scripts\download_yfinance_data.py `
+    --start-date 2026-03-01 `
+    --end-date 2026-04-03 `
+    --limit 1
+```
+
+Result:
+
+```text
+Successful symbols: 1
+Failed symbols: 0
+Rows: 21
+Date range: 2026-03-02 to 2026-04-02
+```
+
+### Three-symbol test
+
+```powershell
+python scripts\download_yfinance_data.py `
+    --start-date 2026-03-01 `
+    --end-date 2026-04-03 `
+    --limit 3
+```
+
+Result:
+
+```text
+Successful symbols: 3
+Failed symbols: 0
+Rows: 63
+Date range: 2026-03-02 to 2026-04-02
+```
+
+### Complete ten-symbol test
+
+```powershell
+python scripts\download_yfinance_data.py `
+    --start-date 2026-03-01 `
+    --end-date 2026-04-03
+```
+
+Result:
+
+```text
+Symbols selected: 10
+Successful symbols: 10
+Failed symbols: 0
+Rows: 210
+Unique trading dates: 21
+Date range: 2026-03-02 to 2026-04-02
+```
+
+### Normalized yfinance staged schema
+
+```text
+trading_date
+nse_symbol
+yahoo_ticker
+open_price
+high_price
+low_price
+close_price
+adjusted_close
+volume
+source
+```
+
+### Generated yfinance outputs
+
+```text
+staged/yfinance/yfinance_2026-03-01_to_2026-04-02_staged.csv
+staged/yfinance/yfinance_2026-03-01_to_2026-04-02_failures.csv
+```
+
+The failure report is created even when no failures occur. This gives downstream automation a predictable output structure.
+
+### Full ten-symbol validation result
+
+```text
+Expected schema matched: yes
+Rows: 210
+Columns: 10
+Unique NSE symbols: 10
+Unique Yahoo tickers: 10
+Unique trading dates: 21
+Date range: 2026-03-02 to 2026-04-02
+Null values: 0
+Duplicate symbol-date rows: 0
+HIGH below LOW rows: 0
+OPEN outside HIGH/LOW rows: 0
+CLOSE outside HIGH/LOW rows: 0
+Non-positive volume rows: 0
+NSE/Yahoo date-coverage failures: 0
+Download failures: 0
+```
+
+Each of the ten symbols contains exactly 21 rows and 21 distinct trading dates.
+
+The exact NSE and Yahoo date sets match for all selected symbols.
+
+Price and volume equality has not yet been tested. That belongs to the reconciliation layer.
 
 ## Upload Validated Files to S3
 
@@ -604,10 +841,17 @@ The first reconciliation version will compare staged NSE Bhavcopy data against n
 - traded volume;
 - missing records;
 - mapping failures;
+- download failures;
 - price mismatches;
 - volume mismatches.
 
-The first controlled prototype will use approximately ten liquid NSE EQ securities across the prepared 21-trading-day date window.
+The first controlled prototype uses ten liquid NSE EQ securities across a prepared 21-trading-day window.
+
+The reconciliation join key will be:
+
+```text
+nse_symbol + trading_date
+```
 
 Planned output classifications include:
 
@@ -615,43 +859,64 @@ Planned output classifications include:
 matched
 price mismatch
 volume mismatch
+price and volume mismatch
 missing in NSE
 missing in yfinance
 symbol mapping failure
 download failure
 ```
 
-NSE Bhavcopy will remain authoritative. Yahoo data will never silently replace NSE values.
+NSE Bhavcopy remains authoritative. Yahoo data will never silently replace NSE values.
+
+Price fields will use tolerance-based comparison rather than exact floating-point equality.
 
 ## What This Project Does Not Yet Do
 
 The project does not yet:
 
-- contain the reusable multi-symbol yfinance ingestion script;
-- maintain the final NSE-to-Yahoo symbol-mapping file;
-- produce a normalized staged yfinance dataset;
-- perform NSE-versus-yfinance reconciliation;
-- generate final mismatch reports;
+- contain a reusable yfinance staged-data quality-check script;
+- perform NSE-versus-yfinance price reconciliation;
+- perform NSE-versus-yfinance volume reconciliation;
+- define final tolerance thresholds;
+- generate final matched and mismatched reports;
+- generate reusable reconciliation summary metrics;
 - ingest BSE Bhavcopy;
 - build the final warehouse schema;
 - include PySpark reconciliation;
 - include Airflow orchestration;
 - include dbt models;
-- include Snowflake analytical tables.
+- include Snowflake analytical tables;
+- include production deployment or scheduling.
 
-The current milestone provides a reliable NSE ingestion, validation, staging, quality-checking, cloud-staging, and secondary-source evaluation foundation.
+The current milestone provides:
+
+- reliable NSE ingestion and validation;
+- controlled S3 cloud staging;
+- clean chronological NSE staging;
+- staged NSE data-quality checks;
+- explicit symbol mapping;
+- reusable multi-symbol yfinance ingestion;
+- failure handling;
+- normalized Yahoo staged data;
+- exact cross-source date alignment.
 
 ## Next Steps
 
-1. Select the initial ten liquid NSE EQ symbols.
-2. Create an explicit NSE-to-Yahoo ticker-mapping file.
-3. Build reusable multi-symbol yfinance ingestion.
-4. Add rate-limit, retry, empty-result, and failed-symbol handling.
-5. Normalize yfinance MultiIndex data into a flat staged schema.
-6. Add staged yfinance quality checks.
-7. Compare NSE and yfinance trading-date coverage.
-8. Define tolerance-based OHLC and volume reconciliation rules.
-9. Generate matched, mismatched, missing, and failure reports.
-10. Scale the controlled reconciliation sample.
-11. Add PySpark, dbt, orchestration, and warehouse layers.
-12. Optionally add BSE as a V2 cross-exchange extension.
+1. Create a reusable yfinance staged-data quality-check script.
+2. Define OHLC comparison tolerances.
+3. Define volume-comparison rules.
+4. Build the first NSE-versus-yfinance reconciliation script.
+5. Join both sources using `nse_symbol` and `trading_date`.
+6. Generate matched, mismatched, and missing-record classifications.
+7. Produce detailed reconciliation reports.
+8. Produce reconciliation summary metrics by symbol and field.
+9. Document legitimate reasons for source differences.
+10. Scale the reconciliation beyond ten symbols.
+11. Add automated tests for mapping, normalization, and reconciliation logic.
+12. Add PySpark for scalable reconciliation.
+13. Add dbt models and dimensional warehouse structures.
+14. Build an SCD2 instrument master.
+15. Add Airflow orchestration.
+16. Add Snowflake destination and analytical queries.
+17. Add Docker and GitHub Actions.
+18. Optionally add BSE as a V2 cross-exchange extension.
