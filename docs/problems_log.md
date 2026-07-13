@@ -156,8 +156,6 @@ The staging and validation workflows must strip whitespace from:
 - column names;
 - string values.
 
----
-
 ### Missing-value sentinel
 
 Some fields use:
@@ -189,8 +187,6 @@ DQ-004
 ```
 
 The staging workflow must convert `-` to a real null value before numeric conversion.
-
----
 
 ### More than 60 `SERIES` values
 
@@ -1459,16 +1455,182 @@ Price and volume equality have not yet been tested. Those comparisons belong to 
 
 ---
 
+## 2026-07-13 — Added reusable staged yfinance quality gate
+
+Created:
+
+```text
+scripts/check_staged_yfinance_quality.py
+```
+
+### Purpose
+
+The ten-symbol Yahoo dataset had already been validated using temporary PowerShell and pandas commands.
+
+Those checks proved that the current sample was structurally clean, but they were not a reusable pipeline component.
+
+The new script converts those temporary checks into a repeatable quality gate between yfinance ingestion and future reconciliation.
+
+### Implemented checks
+
+The script validates:
+
+- staged-file existence;
+- non-empty staged content;
+- the expected staged schema;
+- the required column order;
+- valid trading-date values;
+- numeric OHLCV fields;
+- critical null values;
+- duplicate `nse_symbol` and `trading_date` business keys;
+- one-to-one NSE-symbol and Yahoo-ticker relationships;
+- consistency with `config/yfinance_symbol_map.csv`;
+- the expected `YAHOO_FINANCE` source value;
+- HIGH-versus-LOW relationships;
+- OPEN and CLOSE positions within the HIGH/LOW range;
+- positive volume;
+- per-symbol trading-date completeness;
+- failure-report existence;
+- failure-report schema;
+- failed-download rows.
+
+`adjusted_close` is retained and its null count is reported, but it is not treated as a critical reconciliation field.
+
+Raw Yahoo `close_price` remains the field intended for comparison with NSE `CLOSE_PRICE`.
+
+### Default command
+
+```powershell
+python scripts\check_staged_yfinance_quality.py
+```
+
+### Default staged input
+
+```text
+staged/yfinance/yfinance_2026-03-01_to_2026-04-02_staged.csv
+```
+
+### Default mapping file
+
+```text
+config/yfinance_symbol_map.csv
+```
+
+### Derived failure report
+
+```text
+staged/yfinance/yfinance_2026-03-01_to_2026-04-02_failures.csv
+```
+
+### Quality-gate result
+
+```text
+Schema matches expected: True
+Rows: 210
+Columns: 10
+Unique NSE symbols: 10
+Unique Yahoo tickers: 10
+Unique trading dates: 21
+Date range: 2026-03-02 to 2026-04-02
+Critical null values: 0
+Duplicate symbol-date rows: 0
+Symbols mapped to multiple tickers: 0
+Tickers mapped to multiple symbols: 0
+Unmapped staged symbols: 0
+Ticker-mapping mismatches: 0
+Source values: YAHOO_FINANCE
+HIGH below LOW rows: 0
+OPEN outside HIGH/LOW rows: 0
+CLOSE outside HIGH/LOW rows: 0
+Non-positive volume rows: 0
+Symbols with incomplete coverage: 0
+Failure-report rows: 0
+Final result: PASS
+```
+
+### Per-symbol result
+
+Every selected security contained:
+
+```text
+Rows: 21
+Trading dates: 21
+First date: 2026-03-02
+Last date: 2026-04-02
+Yahoo tickers: 1
+```
+
+### Failure behaviour
+
+The script exits with status code `1` when one or more serious quality issues are detected.
+
+This allows future orchestration tools such as Airflow or GitHub Actions to stop the pipeline before invalid Yahoo data enters reconciliation.
+
+### Outcome
+
+The Yahoo branch of the pipeline now has a complete reusable flow:
+
+```text
+symbol mapping
+        ↓
+multi-symbol yfinance ingestion
+        ↓
+normalized staged Yahoo data
+        ↓
+failed-symbol report
+        ↓
+reusable staged yfinance quality gate
+        ↓
+validated Yahoo reconciliation input
+```
+
+---
+
 ## Current next problem to solve
 
-The project now requires a reconciliation workflow that:
+Both source branches now produce clean, reusable reconciliation inputs:
 
-1. Reads the staged NSE data.
-2. Reads the staged Yahoo data.
-3. Normalizes the NSE schema for comparison.
-4. Joins both sources using `nse_symbol` and `trading_date`.
-5. Applies tolerance-based OHLC comparisons.
-6. Defines appropriate volume-comparison rules.
-7. Classifies rows as matched, mismatched, or missing.
-8. Produces detailed reports and summary metrics.
-9. Preserves NSE Bhavcopy as the authoritative source.
+```text
+NSE staged input
+        ↓
+NSE quality gate
+        ↓
+authoritative NSE reconciliation input
+```
+
+```text
+Yahoo staged input
+        ↓
+Yahoo quality gate
+        ↓
+validated Yahoo reconciliation input
+```
+
+The next development milestone is the reconciliation layer.
+
+It must:
+
+1. Define the OHLC tolerance policy.
+2. Define the volume-comparison policy.
+3. Read the staged NSE dataset.
+4. Read the staged Yahoo dataset.
+5. Filter NSE data to the mapped ten-symbol universe.
+6. Normalize NSE field names into the comparison schema.
+7. Join both sources using `nse_symbol` and `trading_date`.
+8. Preserve both NSE and Yahoo source values.
+9. Calculate absolute price differences.
+10. Calculate percentage price differences.
+11. Calculate absolute volume differences.
+12. Calculate percentage volume differences.
+13. Detect rows missing from NSE.
+14. Detect rows missing from Yahoo.
+15. Classify exact or tolerance-based matches.
+16. Classify price mismatches.
+17. Classify volume mismatches.
+18. Classify combined price-and-volume mismatches.
+19. Produce detailed reconciliation reports.
+20. Produce summary metrics by symbol, field, date, and classification.
+21. Preserve NSE Bhavcopy as the authoritative source.
+22. Prevent Yahoo data from silently replacing NSE values.
+
+The reconciliation layer has not yet been implemented.
