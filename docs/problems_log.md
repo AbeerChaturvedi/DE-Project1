@@ -568,3 +568,17 @@ Important findings:
 
 The smoke test confirms that `RELIANCE.NS` can be normalized and compared with
 the staged NSE Bhavcopy schema.
+
+---
+
+## 2026-07-13 — Added chronological date-range selection to NSE staging
+
+### Problem
+
+The NSE staging script previously selected files using alphabetically sorted
+filenames followed by a fixed file limit.
+
+NSE Bhavcopy filenames use the format:
+
+```text
+cmDDMonYYYYbhav.csv
