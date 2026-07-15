@@ -1586,51 +1586,563 @@ validated Yahoo reconciliation input
 
 ---
 
+## 2026-07-14 — Measured source differences before choosing tolerances
+
+### Problem
+
+The NSE and Yahoo branches were independently staged and quality-checked, but the project did not yet have a defensible price- or volume-comparison policy.
+
+Choosing arbitrary tolerances would create two risks:
+
+- thresholds that are too strict could classify harmless floating-point representation noise as a market-data mismatch;
+- thresholds that are too wide could conceal genuine source differences.
+
+### Controlled comparison universe
+
+```text
+NSE symbols:          10
+Trading dates:        21
+Shared business keys: 210
+Business key:         nse_symbol + trading_date
+```
+
+The NSE staged dataset was filtered to the ten explicitly mapped symbols before comparison.
+
+### Diagnostic result
+
+```text
+Rows shared by both sources: 210
+Rows present only in NSE:    0
+Rows present only in Yahoo:  0
+
+Maximum OHLC absolute difference:
+approximately 0.000098 rupees
+
+Maximum OHLC percentage difference:
+approximately 0.000005%
+
+Exact volume matches:
+210 of 210
+```
+
+The OHLC differences were consistent with floating-point representation or CSV serialization noise rather than genuine market-price disagreement.
+
+### Decision
+
+Use the following V1 price policy:
+
+```text
+absolute difference <= 0.001 rupees
+OR
+percentage difference <= 0.00001%
+```
+
+Use logical OR so that either an absolute or scale-relative comparison can establish a match.
+
+Use the NSE value as the authoritative reference when calculating percentage differences.
+
+Use exact integer equality for volume.
+
+### Rationale
+
+The absolute tolerance is approximately ten times the largest observed representation difference while remaining substantially below one paisa.
+
+No volume tolerance was introduced because all 210 observed volume values matched exactly.
+
+Tolerance values must not be widened merely to improve the reported match rate.
+
+Any future change must be supported by evidence from a larger or materially different comparison universe.
+
+---
+
+## 2026-07-14 — Implemented NSE-versus-yfinance reconciliation V1
+
+Created:
+
+```text
+scripts/reconcile_nse_yfinance.py
+```
+
+### Purpose
+
+Build the first reusable reconciliation layer between:
+
+- authoritative staged NSE Bhavcopy data;
+- normalized staged Yahoo Finance data.
+
+### Reconciliation contract
+
+Business key:
+
+```text
+nse_symbol + trading_date
+```
+
+Join policy:
+
+```text
+full outer join
+one-to-one relationship
+```
+
+Authority policy:
+
+```text
+NSE Bhavcopy remains authoritative.
+Yahoo values never overwrite NSE values.
+```
+
+Price policy:
+
+```text
+absolute difference <= 0.001 rupees
+OR
+percentage difference <= 0.00001%
+```
+
+Volume policy:
+
+```text
+exact integer equality
+```
+
+Supported classifications:
+
+```text
+matched
+price_mismatch
+volume_mismatch
+price_and_volume_mismatch
+missing_in_nse
+missing_in_yahoo
+```
+
+### Why a full outer join was required
+
+An inner join would silently remove records missing from either source.
+
+A full outer join preserves:
+
+- records present in both sources;
+- records present only in NSE;
+- records present only in Yahoo.
+
+This makes missing-source failures visible and classifiable.
+
+### Implemented functionality
+
+The reconciliation script:
+
+- validates required input files;
+- validates required schemas;
+- validates the mapping file;
+- rejects duplicate business keys;
+- validates source values;
+- rejects negative tolerances;
+- filters NSE data to the mapped symbol universe;
+- normalizes NSE and Yahoo schemas;
+- performs a full outer one-to-one merge;
+- preserves both NSE and Yahoo values;
+- calculates absolute OHLC differences;
+- calculates percentage OHLC differences;
+- handles zero-reference percentages safely;
+- applies absolute-or-relative price matching;
+- compares volume exactly;
+- identifies missing-source records;
+- assigns exactly one final row classification;
+- writes detailed and summary reports;
+- exits with a non-zero status on structural failure.
+
+### Generated reconciliation reports
+
+```text
+staged/reconciliation/nse_yfinance_reconciliation_2026-03-02_to_2026-04-02_detail.csv
+staged/reconciliation/nse_yfinance_reconciliation_2026-03-02_to_2026-04-02_summary.csv
+staged/reconciliation/nse_yfinance_reconciliation_2026-03-02_to_2026-04-02_by_symbol.csv
+staged/reconciliation/nse_yfinance_reconciliation_2026-03-02_to_2026-04-02_by_field.csv
+```
+
+### Detailed report
+
+The detailed report contains 39 columns.
+
+It preserves:
+
+- trading date;
+- normalized NSE symbol;
+- Yahoo ticker;
+- join status;
+- final row classification;
+- NSE OHLC values;
+- Yahoo OHLC values;
+- absolute OHLC differences;
+- percentage OHLC differences;
+- field-level match flags;
+- Yahoo adjusted close;
+- NSE volume;
+- Yahoo volume;
+- volume difference;
+- volume match flag;
+- NSE source filename;
+- NSE and Yahoo source labels;
+- the tolerance values used.
+
+### Verified reconciliation result
+
+```text
+Joined rows:                  210
+Unique symbols:              10
+Unique trading dates:        21
+Matched rows:                210
+Price mismatches:            0
+Volume mismatches:           0
+Combined mismatches:         0
+Missing in NSE:              0
+Missing in Yahoo:            0
+Overall match rate:          100.00%
+Duplicate business keys:     0
+Null classifications:        0
+```
+
+### Report inspection
+
+The generated files were inspected independently.
+
+Confirmed:
+
+```text
+Detailed report shape:       210 rows × 39 columns
+Join status values:          both only
+Classification values:      matched only
+Duplicate business keys:     0
+Null classifications:        0
+Overall summary rows:        210
+Per-symbol rows per symbol:  21
+Per-symbol match rate:       100.00%
+```
+
+The controlled dataset produced no genuine price, volume, or missing-record discrepancies.
+
+---
+
+## 2026-07-14 — Added an independent reconciliation quality gate
+
+Created:
+
+```text
+scripts/check_reconciliation_quality.py
+```
+
+### Problem
+
+A reconciliation producer should not be trusted merely because it finishes without raising an exception.
+
+A bug in the producer could still generate:
+
+- incorrect differences;
+- incorrect tolerance flags;
+- incorrect classifications;
+- inconsistent summaries;
+- invalid schemas.
+
+### Decision
+
+Create a separate quality gate that independently recalculates and validates the generated reports.
+
+### Implemented checks
+
+The quality gate validates:
+
+- report-file existence;
+- non-empty reports;
+- exact detail schema and column order;
+- exact overall-summary schema;
+- exact per-symbol-summary schema;
+- exact per-field-summary schema;
+- valid trading dates;
+- business-key uniqueness;
+- mapping consistency;
+- NSE and Yahoo source contracts;
+- tolerance consistency;
+- absolute-difference calculations;
+- percentage-difference calculations;
+- zero-reference percentage behavior;
+- OHLC field-level match flags;
+- exact volume comparison;
+- join-status values;
+- final row classifications;
+- overall-summary consistency;
+- per-symbol-summary consistency;
+- per-field-summary consistency.
+
+### Failure behavior
+
+The quality gate exits with status code:
+
+```text
+1
+```
+
+when a serious inconsistency is detected.
+
+This makes it suitable for future use in:
+
+- GitHub Actions;
+- Airflow;
+- scheduled jobs;
+- other fail-fast orchestration systems.
+
+### Verified result
+
+```text
+Reconciliation quality gate: PASS
+```
+
+---
+
+## 2026-07-14 — Added automated reconciliation tests
+
+Created:
+
+```text
+tests/test_reconciliation_logic.py
+```
+
+### Purpose
+
+The real dataset contains only matched rows.
+
+That is useful for validating the positive path, but it cannot prove that all failure classifications and validation rules work correctly.
+
+Synthetic test data was therefore required to deliberately create controlled failures.
+
+### Test scenarios
+
+The test suite covers:
+
+1. exact price and volume matches;
+2. floating-point differences inside absolute tolerance;
+3. matches established through relative tolerance;
+4. price mismatches;
+5. volume mismatches;
+6. combined price-and-volume mismatches;
+7. records missing from NSE;
+8. records missing from Yahoo;
+9. duplicate NSE business keys;
+10. duplicate Yahoo business keys;
+11. zero-reference percentage calculations;
+12. negative tolerance rejection;
+13. a valid reconciliation quality-gate case;
+14. symbol-mapping violations;
+15. source-contract violations;
+16. tampered difference calculations;
+17. tampered classifications;
+18. inconsistent summary reports.
+
+### Command
+
+```powershell
+python -m unittest discover -s tests -p "test_*.py" -v
+```
+
+### Result
+
+```text
+Tests run: 18
+Tests passed: 18
+Failures: 0
+Errors: 0
+```
+
+### Outcome
+
+The project now tests both:
+
+- the real controlled positive path;
+- synthetic negative and edge cases.
+
+---
+
+## 2026-07-14 — Added a fail-fast local reconciliation pipeline runner
+
+Created:
+
+```text
+scripts/run_reconciliation_pipeline.py
+```
+
+### Purpose
+
+The project had several reusable scripts, but each had to be executed manually.
+
+The runner provides a lightweight local orchestration layer before introducing a heavier platform such as Airflow.
+
+### Execution order
+
+```text
+1. staged NSE quality gate
+2. staged Yahoo quality gate
+3. reconciliation generation
+4. reconciliation quality gate
+5. automated tests
+```
+
+### Implementation behavior
+
+The runner:
+
+- uses the currently active Python interpreter;
+- executes from the repository root;
+- runs each stage through `subprocess`;
+- reports stage timings;
+- stops immediately after a non-zero exit code;
+- supports overriding the staged NSE input;
+- supports skipping the automated-test stage.
+
+### Default command
+
+```powershell
+python scripts\run_reconciliation_pipeline.py
+```
+
+### Optional commands
+
+Skip automated tests:
+
+```powershell
+python scripts\run_reconciliation_pipeline.py --skip-tests
+```
+
+Use a different staged NSE input:
+
+```powershell
+python scripts\run_reconciliation_pipeline.py `
+    --nse-input "staged\nse_bhavcopy\<staged-nse-file>.csv"
+```
+
+### Verified execution
+
+```text
+Staged NSE quality gate:       PASS
+Staged Yahoo quality gate:     PASS
+Reconciliation generation:     PASS
+Reconciliation quality gate:   PASS
+Automated tests:               18 of 18 passed
+Total execution time:          approximately 5.37 seconds
+Final pipeline result:         PASS
+```
+
+### Outcome
+
+The complete controlled reconciliation workflow can now be executed through one fail-fast command.
+
+The runner is a local orchestration precursor, not a replacement for future production scheduling.
+
+---
+
+## Controlled pandas reconciliation V1 outcome
+
+The complete workflow is now:
+
+```text
+validated NSE files
+        |
+        v
+NSE staging
+        |
+        v
+NSE quality gate
+        |
+        +-----------------------------+
+                                      |
+                                      v
+                               reconciliation
+                                      ^
+                                      |
+        +-----------------------------+
+        |
+Yahoo symbol mapping
+        |
+        v
+Yahoo ingestion
+        |
+        v
+Yahoo quality gate
+        |
+        v
+detailed and summary reports
+        |
+        v
+independent reconciliation quality gate
+        |
+        v
+automated tests
+```
+
+The project now demonstrates a complete controlled reconciliation workflow rather than only producing clean source inputs.
+
+Verified final controlled result:
+
+```text
+Symbols:                       10
+Trading dates:                 21
+Joined rows:                   210
+Matched rows:                  210
+Overall match rate:            100.00%
+Reconciliation quality gate:   PASS
+Automated tests:               18 passed
+End-to-end pipeline:           PASS
+```
+
+This completes the controlled pandas reconciliation V1.
+
+It does not complete the broader production-scale project.
+
+---
+
 ## Current next problem to solve
 
-Both source branches now produce clean, reusable reconciliation inputs:
+The controlled pandas reconciliation V1 is technically complete.
 
-```text
-NSE staged input
-        ↓
-NSE quality gate
-        ↓
-authoritative NSE reconciliation input
-```
+The immediate remaining repository work is:
 
-```text
-Yahoo staged input
-        ↓
-Yahoo quality gate
-        ↓
-validated Yahoo reconciliation input
-```
+1. run final Python syntax checks;
+2. run the complete five-stage reconciliation pipeline;
+3. confirm that both quality gates and all 18 automated tests pass;
+4. inspect the final Git diff;
+5. commit the local pipeline runner;
+6. commit the updated documentation;
+7. push the commits to `origin/main`;
+8. confirm that the working tree is clean.
 
-The next development milestone is the reconciliation layer.
+After the repository is finalized, complete a guided, interactive review of the entire week's work before expanding the project.
 
-It must:
+The personal review should cover:
 
-1. Define the OHLC tolerance policy.
-2. Define the volume-comparison policy.
-3. Read the staged NSE dataset.
-4. Read the staged Yahoo dataset.
-5. Filter NSE data to the mapped ten-symbol universe.
-6. Normalize NSE field names into the comparison schema.
-7. Join both sources using `nse_symbol` and `trading_date`.
-8. Preserve both NSE and Yahoo source values.
-9. Calculate absolute price differences.
-10. Calculate percentage price differences.
-11. Calculate absolute volume differences.
-12. Calculate percentage volume differences.
-13. Detect rows missing from NSE.
-14. Detect rows missing from Yahoo.
-15. Classify exact or tolerance-based matches.
-16. Classify price mismatches.
-17. Classify volume mismatches.
-18. Classify combined price-and-volume mismatches.
-19. Produce detailed reconciliation reports.
-20. Produce summary metrics by symbol, field, date, and classification.
-21. Preserve NSE Bhavcopy as the authoritative source.
-22. Prevent Yahoo data from silently replacing NSE values.
+- the complete pipeline architecture;
+- validation, staging, and quality-gate responsibilities;
+- the NSE and Yahoo branches;
+- the reconciliation business key;
+- full outer and one-to-one merge behavior;
+- absolute and relative price tolerances;
+- exact volume comparison;
+- zero-reference percentage handling;
+- missing-record classification;
+- detailed and summary report generation;
+- independent report validation;
+- synthetic automated tests;
+- fail-fast pipeline execution;
+- the exact commands required to rerun the workflow.
 
-The reconciliation layer has not yet been implemented.
+The following remain outside the current controlled pandas V1 milestone:
+
+- full-market Yahoo reconciliation;
+- PySpark;
+- dbt;
+- Airflow;
+- Snowflake;
+- Docker;
+- GitHub Actions;
+- BSE;
+- production scheduling;
+- production deployment.

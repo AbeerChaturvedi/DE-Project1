@@ -1,27 +1,26 @@
-# Market Data Reconciliation Pipeline — NSE and yfinance
+# Market Data Reconciliation Pipeline - NSE and yfinance
 
-🚧 **Work in progress** — Project 1, finance-focused data engineering portfolio project.
+🚧 **Work in progress** - The controlled pandas reconciliation V1 is complete. Scaling, warehouse modelling, orchestration, and production deployment remain future phases.
 
-This project builds a validation-first market-data pipeline for Indian equity data. Its purpose is to ingest, validate, stage, quality-check, and reconcile official NSE Bhavcopy data against independently delivered secondary market data.
+This project builds a validation-first market-data pipeline for Indian equity data. It ingests, validates, stages, quality-checks, and reconciles official NSE Bhavcopy data against independently delivered Yahoo Finance data downloaded through yfinance.
 
-NSE Bhavcopy is the authoritative primary source for Project 1 V1. yfinance is the initial secondary source for same-security, same-date OHLCV reconciliation.
+NSE Bhavcopy is the authoritative primary source for Project 1 V1. yfinance is the initial untrusted secondary source for same-security, same-date OHLCV reconciliation.
 
-BSE Bhavcopy remains a possible future V2 extension for cross-exchange price and liquidity analysis.
+BSE Bhavcopy remains a possible V2 extension for cross-exchange price and liquidity analysis.
 
-The project focuses on data-engineering correctness rather than dashboards. Its main concerns are file validation, quarantine handling, idempotent uploads, cloud staging, local staging, source normalization, reusable quality gates, failure reporting, reconciliation design, traceability, and point-in-time correctness.
+The project focuses on data-engineering correctness rather than dashboards. Its main concerns are source validation, quarantine handling, idempotent uploads, cloud staging, schema normalization, reusable quality gates, explicit reconciliation rules, failure reporting, traceability, and point-in-time correctness.
 
 ## What This Project Demonstrates
 
 - Validation-first ingestion of real financial data
-- Handling unreliable exchange archive behaviour
+- Handling unreliable exchange-archive behaviour
 - Detection of structurally and semantically invalid market-data files
-- Separation of raw, validated, quarantined, and staged data zones
-- Date-partitioned cloud object storage on Amazon S3
+- Separation of raw, validated, quarantine, and staged data zones
+- Date-partitioned object storage on Amazon S3
 - Least-privilege AWS access for upload scripts
 - Idempotent S3 upload behaviour
 - Command-line configurable scripts using `argparse`
-- Local staging and normalization of validated market data
-- Chronological and date-range-based file selection
+- Chronological and date-range-based local staging
 - Reusable staged-data quality gates
 - Explicit NSE-to-Yahoo symbol mapping
 - Sequential secondary-source ingestion
@@ -29,9 +28,15 @@ The project focuses on data-engineering correctness rather than dashboards. Its 
 - Flattening and normalization of yfinance MultiIndex data
 - Symbol-to-ticker mapping validation
 - Exact cross-source trading-date coverage checks
-- Pipeline failure through non-zero exit codes
+- Full outer reconciliation on a validated one-to-one business key
+- Tolerance-based OHLC comparison
+- Exact integer volume comparison
+- Explicit matched, mismatched, and missing-record classifications
+- Detailed, overall, per-symbol, and per-field reconciliation reports
+- Independent validation of generated reconciliation outputs
+- Synthetic automated tests for positive and negative scenarios
+- Fail-fast local pipeline execution through non-zero exit codes
 - Documentation of data-quality findings and engineering decisions
-- Foundation for NSE-versus-yfinance reconciliation
 
 ## Current Project State
 
@@ -39,32 +44,55 @@ Project 1 currently has:
 
 - a working local NSE Bhavcopy validation workflow;
 - separate raw, validated, quarantine, and staged data zones;
-- a controlled and idempotent S3 upload workflow;
-- a local NSE staging and normalization script;
+- controlled and idempotent S3 upload;
+- chronological NSE staging and normalization;
 - configurable NSE `SERIES` filtering;
-- chronological file sorting;
 - inclusive NSE date-range selection;
-- a reusable staged NSE data-quality-check script;
-- a documented secondary-source decision;
+- a reusable staged NSE quality gate;
 - an explicit ten-symbol NSE-to-Yahoo mapping;
-- a reusable multi-symbol yfinance ingestion script;
-- sequential Yahoo downloads with controlled delays and retries;
-- normalized yfinance staged output;
-- a separate yfinance failed-symbol report;
-- a reusable staged yfinance quality-check script;
-- a clean contiguous NSE dataset prepared for reconciliation;
-- a clean and date-aligned ten-symbol yfinance dataset;
-- completed NSE and yfinance quality gates for the initial sample.
+- reusable multi-symbol yfinance ingestion;
+- controlled Yahoo retries and request delays;
+- normalized Yahoo staged output;
+- a separate failed-symbol report;
+- a reusable staged Yahoo quality gate;
+- completed tolerance-based NSE-versus-Yahoo reconciliation;
+- a full outer join on `nse_symbol + trading_date`;
+- preserved NSE and Yahoo source values;
+- explicit matched, mismatched, and missing-record classifications;
+- detailed, overall, per-symbol, and per-field reports;
+- an independent reconciliation quality gate;
+- 18 automated reconciliation tests;
+- a five-stage local end-to-end pipeline runner.
 
-The first NSE-versus-yfinance reconciliation logic has not yet been implemented.
+The controlled reconciliation prototype currently covers:
+
+```text
+NSE symbols:             10
+Trading dates:           21
+Joined symbol-date rows: 210
+Matched rows:            210
+Price mismatches:        0
+Volume mismatches:       0
+Combined mismatches:     0
+Missing in NSE:          0
+Missing in Yahoo:        0
+Overall match rate:      100.00%
+Automated tests:         18 passed
+Quality-gate result:     PASS
+End-to-end runner:       PASS
+```
+
+This is a completed pandas reconciliation V1 for the controlled ten-symbol sample.
+
+It is not yet a full-market production pipeline. Scaling, distributed processing, warehouse modelling, scheduling, CI, and deployment remain later phases.
 
 ## Local Data Zones
 
 ```text
-raw/          → retained local source files
-validated/    → files that passed validation and are safe for staging/upload
-quarantine/   → files rejected by validation gates
-staged/       → generated cleaned and normalized datasets
+raw/          -> downloaded source files
+validated/    -> files that passed validation
+quarantine/   -> files rejected by validation
+staged/       -> generated cleaned, normalized, and reconciled datasets
 ```
 
 Current local NSE file counts:
@@ -77,6 +105,12 @@ quarantine/   = 586 files
 
 The `validated/` and `staged/` folders are ignored by Git because they contain generated or data-heavy outputs.
 
+Generated reconciliation reports are written under:
+
+```text
+staged/reconciliation/
+```
+
 Python-generated bytecode and cache directories are also ignored:
 
 ```text
@@ -88,50 +122,105 @@ __pycache__/
 
 ```text
 NSE Bhavcopy download
-        ↓
+        |
+        v
 raw/
-        ↓
+        |
+        v
 validation gates
-        ├────────────────────────→ quarantine/
-        ↓
+        |------------------------------> quarantine/
+        |
+        v
 validated/
-        ├────────────────────────→ controlled idempotent S3 upload
-        │                                  ↓
-        │                        S3 validated/nse_bhavcopy/
-        │
-        ↓
-local NSE staging and normalization
-        ↓
+        |------------------------------> controlled idempotent S3 upload
+        |                                           |
+        |                                           v
+        |                                S3 validated/nse_bhavcopy/
+        |
+        v
+NSE staging and normalization
+        |
+        v
 staged/nse_bhavcopy/
-        ↓
+        |
+        v
 staged NSE quality gate
-        ↓
+        |
+        v
 authoritative NSE reconciliation input
-        │
-        │
-        ├──────────────────────────────────────────────┐
-                                                       ↓
-                                              future reconciliation
-                                                       ↑
-        ┌──────────────────────────────────────────────┘
-        │
+        |
+        +---------------------------------------------+
+                                                      |
+                                                      v
+                                            full outer reconciliation
+                                                      ^
+                                                      |
+        +---------------------------------------------+
+        |
 config/yfinance_symbol_map.csv
-        ↓
+        |
+        v
 multi-symbol yfinance ingestion
-        ├────────────────────────→ failed-symbol report
-        ↓
+        |------------------------------> failed-symbol report
+        |
+        v
 MultiIndex flattening and normalization
-        ↓
+        |
+        v
 staged/yfinance/
-        ↓
-staged yfinance quality gate
-        ↓
+        |
+        v
+staged Yahoo quality gate
+        |
+        v
 validated Yahoo reconciliation input
-        ↓
-future matched, mismatched, missing, and failure reports
-        ↓
-future PySpark / dbt / warehouse layers
+        |
+        v
+full outer join on nse_symbol + trading_date
+        |
+        v
+tolerance-based OHLC comparison
+and exact volume comparison
+        |
+        v
+record classification
+        |
+        +--> matched
+        +--> price_mismatch
+        +--> volume_mismatch
+        +--> price_and_volume_mismatch
+        +--> missing_in_nse
+        +--> missing_in_yahoo
+        |
+        v
+staged/reconciliation/
+        |
+        +--> detailed report
+        +--> overall summary
+        +--> per-symbol summary
+        +--> per-field summary
+        |
+        v
+independent reconciliation quality gate
+        |
+        v
+18 automated reconciliation tests
+        |
+        v
+local end-to-end pipeline result
 ```
+
+The local pipeline runner executes the final controlled workflow in this order:
+
+```text
+1. staged NSE quality gate
+2. staged Yahoo quality gate
+3. reconciliation generation
+4. reconciliation quality gate
+5. automated tests
+```
+
+The runner stops immediately when a stage returns a non-zero exit code.
 
 ## Validation Workflow
 
@@ -147,7 +236,9 @@ Current validation gates include:
 - HTML and error-page detection;
 - expected-header validation;
 - NSE CSV column-name normalization;
+- filename-date parsing;
 - filename date versus internal `DATE1` consistency checks;
+- required-field validation;
 - routing failed files to quarantine.
 
 Files that pass validation are copied into:
@@ -180,7 +271,8 @@ Documented findings include:
 - yfinance returns ticker data using pandas MultiIndex columns;
 - adjusted and unadjusted closing prices must be handled explicitly;
 - symbol-to-ticker relationships must be validated against an external mapping contract;
-- clean-looking secondary-source data still requires a reusable quality gate before reconciliation.
+- clean-looking secondary-source data still requires a reusable quality gate;
+- output reports must be independently validated rather than trusted because the producer completed successfully.
 
 Detailed findings are maintained in:
 
@@ -202,7 +294,6 @@ Current major decisions include:
 - NSE Bhavcopy is the authoritative primary source.
 - NSE archive output is treated as untrusted until it passes validation.
 - Raw, validated, quarantine, and staged zones remain separate.
-- Raw source files are retained during the valid-file workflow.
 - Validated files are uploaded to S3 using date-partitioned prefixes.
 - Upload scripts must be idempotent.
 - Project scripts must not use root or administrator AWS credentials.
@@ -210,11 +301,17 @@ Current major decisions include:
 - Python-generated bytecode is not committed to Git.
 - yfinance is the initial secondary source for Project 1 V1.
 - yfinance data is treated as an untrusted secondary source.
-- Raw Yahoo `Close`, not `Adj Close`, will be compared with NSE `CLOSE_PRICE`.
-- Yahoo download failures must be recorded rather than silently discarded.
+- Raw Yahoo `Close`, not `Adj Close`, is compared with NSE `CLOSE_PRICE`.
+- Yahoo download failures are recorded rather than silently discarded.
 - yfinance downloads are processed sequentially to reduce rate-limit risk.
 - Staged Yahoo data must pass a reusable quality gate before reconciliation.
-- Serious quality failures must return a non-zero process exit code.
+- Reconciliation uses a full outer one-to-one join.
+- NSE remains authoritative and Yahoo values never overwrite NSE values.
+- OHLC fields use absolute-or-relative tolerance matching.
+- Volume requires exact integer equality in V1.
+- Missing-source records remain explicit.
+- Generated reports must pass an independent reconciliation quality gate.
+- Serious failures must return a non-zero process exit code.
 - BSE Bhavcopy remains a possible V2 cross-exchange extension.
 - Alpha Vantage remains an optional future API-ingestion extension.
 
@@ -222,29 +319,35 @@ Current major decisions include:
 
 ```text
 project1-market-data-reconciliation/
-├── config/
-│   └── yfinance_symbol_map.csv
-├── docs/
-│   ├── data_quality_findings.md
-│   ├── decisions.md
-│   └── problems_log.md
-├── raw/
-├── validated/                      # generated/data folder, ignored by Git
-├── quarantine/
-├── staged/                         # generated locally, ignored by Git
-│   ├── nse_bhavcopy/
-│   └── yfinance/
-├── scripts/
-│   ├── load_bhavcopy_data.py
-│   ├── validate_bhavcopy.py
-│   ├── upload_validated_to_s3.py
-│   ├── stage_nse_bhavcopy.py
-│   ├── check_staged_nse_quality.py
-│   ├── download_yfinance_data.py
-│   └── check_staged_yfinance_quality.py
-├── .gitignore
-├── requirements.txt
-└── README.md
+|-- config/
+|   `-- yfinance_symbol_map.csv
+|-- docs/
+|   |-- data_quality_findings.md
+|   |-- decisions.md
+|   `-- problems_log.md
+|-- raw/
+|-- validated/                      # generated/data folder, ignored by Git
+|-- quarantine/
+|-- staged/                         # generated locally, ignored by Git
+|   |-- nse_bhavcopy/
+|   |-- yfinance/
+|   `-- reconciliation/
+|-- scripts/
+|   |-- load_bhavcopy_data.py
+|   |-- validate_bhavcopy.py
+|   |-- upload_validated_to_s3.py
+|   |-- stage_nse_bhavcopy.py
+|   |-- check_staged_nse_quality.py
+|   |-- download_yfinance_data.py
+|   |-- check_staged_yfinance_quality.py
+|   |-- reconcile_nse_yfinance.py
+|   |-- check_reconciliation_quality.py
+|   `-- run_reconciliation_pipeline.py
+|-- tests/
+|   `-- test_reconciliation_logic.py
+|-- .gitignore
+|-- requirements.txt
+`-- README.md
 ```
 
 ## Cloud Staging
@@ -290,7 +393,7 @@ It:
 ### Completed
 
 - [x] Project pivoted to finance-focused market-data reconciliation
-- [x] NSE Bhavcopy local ingestion and backfill completed
+- [x] NSE Bhavcopy local ingestion and historical backfill completed
 - [x] Data-quality findings documented
 - [x] Validation workflow implemented
 - [x] Invalid files routed to `quarantine/`
@@ -346,25 +449,46 @@ It:
 - [x] Yahoo per-symbol date-coverage validation implemented
 - [x] Yahoo failed-download report validation implemented
 - [x] Full ten-symbol yfinance quality gate passed
+- [x] Actual cross-source OHLC differences measured before choosing tolerances
+- [x] Absolute and relative OHLC tolerance policy defined
+- [x] Exact integer volume-comparison policy defined
+- [x] Full outer one-to-one reconciliation implemented
+- [x] NSE authority and non-overwrite policy implemented
+- [x] Detailed reconciliation report implemented
+- [x] Overall reconciliation summary implemented
+- [x] Per-symbol reconciliation summary implemented
+- [x] Per-field reconciliation summary implemented
+- [x] Matched-record classification implemented
+- [x] Price-mismatch classification implemented
+- [x] Volume-mismatch classification implemented
+- [x] Combined price-and-volume classification implemented
+- [x] Missing-in-NSE classification implemented
+- [x] Missing-in-Yahoo classification implemented
+- [x] Controlled 210-row reconciliation completed
+- [x] Reconciliation result independently inspected
+- [x] Reusable reconciliation quality gate implemented
+- [x] Reconciliation schemas independently validated
+- [x] Reconciliation calculations independently recalculated
+- [x] Reconciliation summaries independently validated
+- [x] 18 automated reconciliation tests implemented
+- [x] Positive and negative test scenarios passed
+- [x] Five-stage local pipeline runner implemented
+- [x] End-to-end reconciliation pipeline passed
 
 ### In Progress or Planned
 
-- [ ] Define tolerance-based OHLC comparison rules
-- [ ] Define volume-comparison rules
-- [ ] Implement first NSE-versus-yfinance reconciliation logic
-- [ ] Generate matched-record reports
-- [ ] Generate price-mismatch reports
-- [ ] Generate volume-mismatch reports
-- [ ] Generate missing-in-NSE and missing-in-Yahoo reports
-- [ ] Add reconciliation summary metrics
-- [ ] Scale reconciliation beyond the initial ten symbols
-- [ ] Add automated tests for ingestion, mapping, quality, and reconciliation logic
-- [ ] Add PySpark reconciliation layer
+- [ ] Scale reconciliation beyond the controlled ten-symbol universe
+- [ ] Test additional date windows and market conditions
+- [ ] Investigate legitimate provider differences at larger scale
+- [ ] Add corporate-action-aware comparison rules
+- [ ] Add automated tests for earlier ingestion and staging modules
+- [ ] Add continuous integration checks
+- [ ] Add PySpark reconciliation for larger datasets
 - [ ] Add dbt dimensional models
 - [ ] Build an SCD2 instrument master
 - [ ] Add Airflow orchestration
 - [ ] Add Snowflake destination and analytical queries
-- [ ] Add Docker and automated CI checks
+- [ ] Add Docker packaging
 - [ ] Optionally add BSE cross-exchange comparison in V2
 
 ## Tech Stack
@@ -373,6 +497,7 @@ It:
 
 - Python
 - pandas
+- `unittest`
 - yfinance
 - boto3
 - Amazon S3
@@ -414,8 +539,8 @@ python scripts\validate_bhavcopy.py
 Expected behaviour:
 
 ```text
-valid files   → copied to validated/
-invalid files → moved to quarantine/
+valid files   -> copied to validated/
+invalid files -> moved to quarantine/
 ```
 
 ## Stage Validated NSE Bhavcopy Files
@@ -588,7 +713,7 @@ CLOSE_PRICE outside HIGH/LOW rows: 0
 Rows with TTL_TRD_QNTY <= 0: 0
 ```
 
-These results confirm that the staged NSE dataset is suitable as the authoritative input for the first reconciliation prototype.
+These results confirm that the staged NSE dataset is suitable as the authoritative input for the controlled reconciliation prototype.
 
 ## yfinance Secondary Source
 
@@ -600,19 +725,19 @@ The explicit NSE-to-Yahoo symbol mapping is stored in:
 config/yfinance_symbol_map.csv
 ```
 
-The initial mappings are:
+The current mappings are:
 
 ```text
-RELIANCE   → RELIANCE.NS
-HDFCBANK   → HDFCBANK.NS
-ICICIBANK  → ICICIBANK.NS
-SBIN       → SBIN.NS
-TCS        → TCS.NS
-INFY       → INFY.NS
-ITC        → ITC.NS
-TATASTEEL  → TATASTEEL.NS
-ONGC       → ONGC.NS
-ASHOKLEY   → ASHOKLEY.NS
+RELIANCE   -> RELIANCE.NS
+HDFCBANK   -> HDFCBANK.NS
+ICICIBANK  -> ICICIBANK.NS
+SBIN       -> SBIN.NS
+TCS        -> TCS.NS
+INFY       -> INFY.NS
+ITC        -> ITC.NS
+TATASTEEL  -> TATASTEEL.NS
+ONGC       -> ONGC.NS
+ASHOKLEY   -> ASHOKLEY.NS
 ```
 
 These symbols were selected because:
@@ -628,10 +753,10 @@ These symbols were selected because:
 The first smoke test used:
 
 ```text
-Ticker: RELIANCE.NS
-Start:  2026-03-01
-End:    2026-04-03
-Interval: daily
+Ticker:      RELIANCE.NS
+Start:       2026-03-01
+End:         2026-04-03
+Interval:    daily
 auto_adjust: False
 ```
 
@@ -640,12 +765,12 @@ The yfinance end date is exclusive. Therefore, `2026-04-03` was used to retrieve
 Smoke-test result:
 
 ```text
-Rows returned: 21
+Rows returned:       21
 First returned date: 2026-03-02
-Last returned date: 2026-04-02
-Index type: DatetimeIndex
-Column type: MultiIndex
-Null values: 0
+Last returned date:  2026-04-02
+Index type:          DatetimeIndex
+Column type:         MultiIndex
+Null values:         0
 ```
 
 Returned fields:
@@ -664,8 +789,8 @@ Important findings:
 - yfinance returns ticker data using a two-level pandas `MultiIndex`;
 - the ingestion script must flatten and normalize these columns;
 - `Close` and `Adj Close` are both returned when `auto_adjust=False`;
-- NSE `CLOSE_PRICE` will be compared with Yahoo `Close`;
-- `Adj Close` is retained only as additional metadata;
+- NSE `CLOSE_PRICE` is compared with Yahoo raw `Close`;
+- `Adj Close` is retained only as supplementary information;
 - floating-point differences require tolerance-based comparisons;
 - empty DataFrames must not be silently treated as successful downloads;
 - external-source rate limits and failures must be recorded explicitly.
@@ -734,9 +859,9 @@ Result:
 
 ```text
 Successful symbols: 1
-Failed symbols: 0
-Rows: 21
-Date range: 2026-03-02 to 2026-04-02
+Failed symbols:     0
+Rows:               21
+Date range:         2026-03-02 to 2026-04-02
 ```
 
 ### Three-symbol test
@@ -752,9 +877,9 @@ Result:
 
 ```text
 Successful symbols: 3
-Failed symbols: 0
-Rows: 63
-Date range: 2026-03-02 to 2026-04-02
+Failed symbols:     0
+Rows:               63
+Date range:         2026-03-02 to 2026-04-02
 ```
 
 ### Complete ten-symbol test
@@ -768,12 +893,12 @@ python scripts\download_yfinance_data.py `
 Result:
 
 ```text
-Symbols selected: 10
-Successful symbols: 10
-Failed symbols: 0
-Rows: 210
-Unique trading dates: 21
-Date range: 2026-03-02 to 2026-04-02
+Symbols selected:      10
+Successful symbols:    10
+Failed symbols:        0
+Rows:                  210
+Unique trading dates:  21
+Date range:            2026-03-02 to 2026-04-02
 ```
 
 ### Normalized yfinance staged schema
@@ -824,8 +949,6 @@ Each of the ten symbols contains exactly 21 rows and 21 distinct trading dates.
 
 The exact NSE and Yahoo date sets match for all selected symbols.
 
-Price and volume equality has not yet been tested. That belongs to the reconciliation layer.
-
 ## Check Staged yfinance Data Quality
 
 The reusable yfinance quality-check script is:
@@ -834,7 +957,7 @@ The reusable yfinance quality-check script is:
 scripts/check_staged_yfinance_quality.py
 ```
 
-It acts as the quality gate between normalized Yahoo ingestion and future NSE-versus-Yahoo reconciliation.
+It acts as the quality gate between normalized Yahoo ingestion and NSE-versus-Yahoo reconciliation.
 
 The script validates:
 
@@ -931,7 +1054,7 @@ Final result: PASS
 
 Each of the ten selected securities contains exactly 21 rows covering the same 21 trading dates.
 
-The quality-check script exits with status code `1` when a serious issue is detected. Future orchestration can use this behaviour to stop the pipeline before invalid Yahoo data enters reconciliation.
+The quality-check script exits with status code `1` when a serious issue is detected. Future orchestration can use this behavior to stop the pipeline before invalid Yahoo data enters reconciliation.
 
 `adjusted_close` remains in the staged schema and its null values are reported, but it is not treated as a critical reconciliation field. Raw Yahoo `close_price` remains the comparison field for NSE `CLOSE_PRICE`.
 
@@ -963,68 +1086,328 @@ python scripts\upload_validated_to_s3.py --limit 0
 
 Rerunning the uploader skips objects that already exist in S3.
 
-## Reconciliation Plan
+## NSE-versus-yfinance Reconciliation
 
-The first reconciliation version will compare staged NSE Bhavcopy data against normalized yfinance data using:
-
-- normalized NSE symbol;
-- Yahoo ticker mapping;
-- trading date;
-- open price;
-- high price;
-- low price;
-- close price;
-- traded volume;
-- missing records;
-- mapping failures;
-- download failures;
-- price mismatches;
-- volume mismatches.
-
-The first controlled prototype uses ten liquid NSE EQ securities across a prepared 21-trading-day window.
-
-The reconciliation join key will be:
+The reconciliation producer is:
 
 ```text
-nse_symbol + trading_date
+scripts/reconcile_nse_yfinance.py
 ```
 
-Planned output classifications include:
+Run the default controlled reconciliation:
+
+```powershell
+python scripts\reconcile_nse_yfinance.py
+```
+
+View its configurable paths and tolerance options:
+
+```powershell
+python scripts\reconcile_nse_yfinance.py --help
+```
+
+### Reconciliation scope
+
+The controlled V1 comparison uses:
+
+```text
+Mapped NSE symbols:      10
+Trading dates:           21
+Expected joined rows:    210
+Business key:            nse_symbol + trading_date
+Primary authority:       NSE Bhavcopy
+Secondary source:        Yahoo Finance
+Join type:               full outer
+Join relationship:       one-to-one
+```
+
+The reconciliation script filters the staged NSE dataset to the mapped ten-symbol universe before joining it with staged Yahoo data.
+
+### Authority and preservation rules
+
+NSE Bhavcopy remains authoritative.
+
+Yahoo values never silently replace NSE values.
+
+The detailed report preserves:
+
+- both source OHLC values;
+- both source volume values;
+- both source labels;
+- the Yahoo ticker;
+- the NSE source filename;
+- calculated differences;
+- match flags;
+- tolerance values;
+- join status;
+- final classification.
+
+### OHLC tolerance policy
+
+For OPEN, HIGH, LOW, and CLOSE, the workflow calculates:
+
+```text
+absolute difference
+percentage difference using NSE as the reference
+field-level match flag
+```
+
+A price field is considered matched when either condition passes:
+
+```text
+absolute difference <= 0.001 rupees
+```
+
+or:
+
+```text
+percentage difference <= 0.00001%
+```
+
+The conditions use logical OR.
+
+The thresholds were chosen after measuring the actual controlled dataset:
+
+```text
+Maximum observed OHLC absolute difference:
+approximately 0.000098 rupees
+
+Maximum observed OHLC percentage difference:
+approximately 0.000005%
+```
+
+The observed values were consistent with floating-point representation or serialization noise rather than meaningful market-price disagreement.
+
+The absolute threshold remains below one paisa and is approximately ten times the largest observed representation difference.
+
+### Volume policy
+
+NSE `TTL_TRD_QNTY` is compared with Yahoo `volume`.
+
+Volume requires exact integer equality in V1.
+
+Observed controlled result:
+
+```text
+Exact volume matches: 210 of 210
+Volume mismatches:    0
+```
+
+No volume tolerance is introduced because the current evidence does not justify one.
+
+### Record classifications
+
+Every output row receives exactly one classification:
 
 ```text
 matched
-price mismatch
-volume mismatch
-price and volume mismatch
-missing in NSE
-missing in yfinance
-symbol mapping failure
-download failure
+price_mismatch
+volume_mismatch
+price_and_volume_mismatch
+missing_in_nse
+missing_in_yahoo
 ```
 
-NSE Bhavcopy remains authoritative. Yahoo data will never silently replace NSE values.
+A full outer join ensures that missing-source rows remain visible instead of being silently discarded.
 
-Price fields will use tolerance-based comparison rather than exact floating-point equality.
+### Generated reports
 
-The reconciliation layer must preserve both source values and calculate explicit differences rather than overwriting either source.
+The controlled V1 run produces:
+
+```text
+staged/reconciliation/nse_yfinance_reconciliation_2026-03-02_to_2026-04-02_detail.csv
+staged/reconciliation/nse_yfinance_reconciliation_2026-03-02_to_2026-04-02_summary.csv
+staged/reconciliation/nse_yfinance_reconciliation_2026-03-02_to_2026-04-02_by_symbol.csv
+staged/reconciliation/nse_yfinance_reconciliation_2026-03-02_to_2026-04-02_by_field.csv
+```
+
+The detailed report contains 39 columns.
+
+Generated reconciliation reports remain ignored by Git because they are reproducible pipeline outputs.
+
+### Verified reconciliation result
+
+```text
+Joined rows:                     210
+Unique symbols:                 10
+Unique trading dates:           21
+Matched rows:                   210
+Price mismatches:               0
+Volume mismatches:              0
+Price-and-volume mismatches:    0
+Missing in NSE:                 0
+Missing in Yahoo:               0
+Overall match rate:             100.00%
+Duplicate business keys:        0
+Null classifications:           0
+```
+
+## Check Reconciliation Quality
+
+The independent reconciliation quality gate is:
+
+```text
+scripts/check_reconciliation_quality.py
+```
+
+Run it using the default controlled outputs:
+
+```powershell
+python scripts\check_reconciliation_quality.py
+```
+
+View configurable report paths and validation options:
+
+```powershell
+python scripts\check_reconciliation_quality.py --help
+```
+
+The quality gate independently validates:
+
+- report-file existence;
+- non-empty reports;
+- exact schema and column ordering;
+- valid business keys;
+- duplicate-key absence;
+- mapping consistency;
+- NSE and Yahoo source contracts;
+- tolerance values;
+- absolute-difference calculations;
+- percentage-difference calculations;
+- OHLC match flags;
+- exact volume comparison;
+- join statuses;
+- final classifications;
+- overall-summary consistency;
+- per-symbol-summary consistency;
+- per-field-summary consistency.
+
+The quality gate does not assume that the reconciliation producer is correct merely because it completed successfully.
+
+It independently recalculates critical values and exits with status code `1` when a serious inconsistency is detected.
+
+Verified result:
+
+```text
+Reconciliation quality gate: PASS
+```
+
+## Automated Reconciliation Tests
+
+Automated tests are stored in:
+
+```text
+tests/test_reconciliation_logic.py
+```
+
+Run the full test suite:
+
+```powershell
+python -m unittest discover -s tests -p "test_*.py" -v
+```
+
+The 18 synthetic tests cover:
+
+- exact matches;
+- floating-point differences within absolute tolerance;
+- relative-tolerance matches;
+- price mismatches;
+- volume mismatches;
+- combined price-and-volume mismatches;
+- missing NSE records;
+- missing Yahoo records;
+- duplicate NSE business keys;
+- duplicate Yahoo business keys;
+- zero-reference percentage calculations;
+- negative tolerance rejection;
+- valid reconciliation quality-gate behavior;
+- mapping violations;
+- source-contract violations;
+- tampered difference calculations;
+- tampered classifications;
+- inconsistent summary reports.
+
+Verified result:
+
+```text
+Tests run: 18
+Tests passed: 18
+Failures: 0
+Errors: 0
+```
+
+## Run the End-to-End Reconciliation Pipeline
+
+The local pipeline runner is:
+
+```text
+scripts/run_reconciliation_pipeline.py
+```
+
+It is a lightweight local orchestration layer and a precursor to future CI or Airflow scheduling.
+
+Run the complete controlled pipeline:
+
+```powershell
+python scripts\run_reconciliation_pipeline.py
+```
+
+The runner executes:
+
+```text
+1. scripts/check_staged_nse_quality.py
+2. scripts/check_staged_yfinance_quality.py
+3. scripts/reconcile_nse_yfinance.py
+4. scripts/check_reconciliation_quality.py
+5. python -m unittest discover -s tests -p "test_*.py" -v
+```
+
+The runner uses the current Python interpreter, executes from the project root, reports stage timings, and stops immediately when any stage returns a non-zero exit code.
+
+Run the pipeline without automated tests:
+
+```powershell
+python scripts\run_reconciliation_pipeline.py --skip-tests
+```
+
+Run the pipeline with a different staged NSE input:
+
+```powershell
+python scripts\run_reconciliation_pipeline.py `
+    --nse-input "staged\nse_bhavcopy\<staged-nse-file>.csv"
+```
+
+Verified end-to-end result:
+
+```text
+Staged NSE quality gate:          PASS
+Staged Yahoo quality gate:        PASS
+Reconciliation generation:        PASS
+Reconciliation quality gate:      PASS
+Automated tests:                  18 of 18 passed
+Total pipeline time:              approximately 5.37 seconds
+Final pipeline result:            PASS
+```
 
 ## What This Project Does Not Yet Do
 
 The project does not yet:
 
-- perform NSE-versus-yfinance price reconciliation;
-- perform NSE-versus-yfinance volume reconciliation;
-- define final production tolerance thresholds;
-- generate final matched and mismatched reports;
-- generate reusable reconciliation summary metrics;
-- scale reconciliation beyond the controlled ten-symbol sample;
+- reconcile the complete NSE equity universe;
+- validate tolerance behavior across substantially larger date windows;
+- implement corporate-action-aware comparison rules;
 - ingest BSE Bhavcopy;
-- build the final warehouse schema;
+- ingest Alpha Vantage as an additional source;
+- build a dimensional warehouse schema;
+- build an SCD2 instrument master;
 - include PySpark reconciliation;
 - include Airflow orchestration;
 - include dbt models;
 - include Snowflake analytical tables;
-- include production deployment or scheduling.
+- include Docker packaging;
+- include automated GitHub Actions CI;
+- include production deployment or scheduling;
+- provide production market-data guarantees.
 
 The current milestone provides:
 
@@ -1037,29 +1420,28 @@ The current milestone provides:
 - retry and failed-download handling;
 - normalized Yahoo staged data;
 - exact cross-source date alignment;
-- a reusable staged yfinance quality gate;
-- clean authoritative and secondary inputs for the first reconciliation prototype.
+- a reusable staged Yahoo quality gate;
+- a documented reconciliation contract;
+- complete controlled NSE-versus-Yahoo reconciliation;
+- independently validated reconciliation outputs;
+- 18 automated reconciliation tests;
+- a fail-fast local pipeline runner.
 
 ## Next Steps
 
-1. Define tolerance-based OHLC comparison rules.
-2. Define volume-comparison rules.
-3. Design the reconciliation output schema.
-4. Build the first NSE-versus-yfinance reconciliation script.
-5. Normalize the selected NSE fields into the comparison schema.
-6. Join both sources using `nse_symbol` and `trading_date`.
-7. Preserve both source values and calculate explicit differences.
-8. Generate matched, mismatched, and missing-record classifications.
-9. Produce detailed reconciliation reports.
-10. Produce reconciliation summary metrics by symbol and field.
-11. Investigate and document legitimate reasons for source differences.
-12. Add controlled negative tests for missing, duplicate, and mismatched records.
-13. Scale reconciliation beyond ten symbols.
-14. Add automated tests for mapping, normalization, quality, and reconciliation logic.
-15. Add PySpark for scalable reconciliation.
-16. Add dbt models and dimensional warehouse structures.
-17. Build an SCD2 instrument master.
-18. Add Airflow orchestration.
-19. Add Snowflake destination and analytical queries.
-20. Add Docker and GitHub Actions.
-21. Optionally add BSE as a V2 cross-exchange extension.
+1. Complete a guided line-by-line review of the controlled pandas V1.
+2. Explain the complete pipeline and its engineering decisions from memory.
+3. Scale reconciliation to a larger controlled symbol universe.
+4. Test additional date windows and market conditions.
+5. Measure whether price and volume differences remain stable at larger scale.
+6. Investigate legitimate provider-specific discrepancies.
+7. Add corporate-action-aware comparison rules.
+8. Add automated tests for ingestion and staging modules.
+9. Add GitHub Actions for automated checks.
+10. Add PySpark for scalable reconciliation.
+11. Add dbt models and dimensional warehouse structures.
+12. Build an SCD2 instrument master.
+13. Add Airflow orchestration.
+14. Add Snowflake destination and analytical queries.
+15. Add Docker packaging.
+16. Optionally add BSE as a V2 cross-exchange extension.
