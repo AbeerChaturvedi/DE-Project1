@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 import argparse
+import json
 import sys
 
 import numpy as np
@@ -159,6 +160,16 @@ def parse_args() -> argparse.Namespace:
         help=(
             "Absolute price tolerance in rupees. "
             f"Default: {DEFAULT_PRICE_ABS_TOLERANCE}"
+        ),
+    )
+
+    parser.add_argument(
+        "--report-manifest",
+        type=Path,
+        default=None,
+        help=(
+            "Optional JSON file where the exact generated report "
+            "paths will be written."
         ),
     )
 
@@ -1587,6 +1598,13 @@ def main() -> None:
         args.output_dir
     )
 
+    report_manifest_path = (
+        resolve_project_path(
+            args.report_manifest
+        )
+        if args.report_manifest is not None
+        else None
+    )
     print(
         f"NSE input: {nse_path}"
     )
@@ -1671,12 +1689,34 @@ def main() -> None:
         output_dir,
     )
 
+    if report_manifest_path is not None:
+        report_manifest_path.parent.mkdir(
+            parents=True,
+            exist_ok=True,
+        )
+
+        manifest_data = {
+            label: str(path.resolve())
+            for label, path in report_paths.items()
+        }
+
+        report_manifest_path.write_text(
+            json.dumps(
+                manifest_data,
+                indent=2,
+            ),
+            encoding="utf-8",
+        )
+
+        print(
+            f"Report manifest: {report_manifest_path}"
+        )
+
     print_results(
         overall_summary,
         field_summary,
         report_paths,
     )
-
 
 if __name__ == "__main__":
     try:

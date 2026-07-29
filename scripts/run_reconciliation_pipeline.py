@@ -16,6 +16,20 @@ DEFAULT_NSE_INPUT = (
     / "nse_bhavcopy_eq_2026-03-01_to_2026-04-02_staged.csv"
 )
 
+DEFAULT_YAHOO_INPUT = (
+    BASE_DIR
+    / "staged"
+    / "yfinance"
+    / "yfinance_2026-03-01_to_2026-04-02_staged.csv"
+)
+
+DEFAULT_REPORT_MANIFEST = (
+    BASE_DIR
+    / "staged"
+    / "reconciliation"
+    / "latest_report_manifest.json"
+)
+
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
@@ -35,6 +49,15 @@ def parse_args() -> argparse.Namespace:
         ),
     )
 
+    parser.add_argument(
+        "--yahoo-input",
+        type=Path,
+        default=DEFAULT_YAHOO_INPUT,
+        help=(
+            "Path to the staged Yahoo Finance reconciliation input. "
+            f"Default: {DEFAULT_YAHOO_INPUT}"
+        ),
+    )
     parser.add_argument(
         "--skip-tests",
         action="store_true",
@@ -101,10 +124,24 @@ def main() -> None:
         args.nse_input
     )
 
+    yahoo_input = resolve_project_path(
+        args.yahoo_input
+    )
+
     if not nse_input.exists():
         raise FileNotFoundError(
             f"Staged NSE input not found: {nse_input}"
         )
+
+    if not yahoo_input.exists():
+        raise FileNotFoundError(
+            f"Staged Yahoo Finance input not found: {yahoo_input}"
+        )
+
+    report_manifest = DEFAULT_REPORT_MANIFEST
+
+    if report_manifest.exists():
+        report_manifest.unlink()
 
     python_executable = sys.executable
 
@@ -133,6 +170,8 @@ def main() -> None:
                     / "scripts"
                     / "check_staged_yfinance_quality.py"
                 ),
+                "--input",
+                str(yahoo_input),
             ],
         ),
         (
@@ -146,6 +185,10 @@ def main() -> None:
                 ),
                 "--nse-input",
                 str(nse_input),
+                "--yahoo-input",
+                str(yahoo_input),
+                "--report-manifest",
+                str(report_manifest),
             ],
         ),
         (
@@ -157,6 +200,8 @@ def main() -> None:
                     / "scripts"
                     / "check_reconciliation_quality.py"
                 ),
+                "--report-manifest",
+                str(report_manifest),
             ],
         ),
     ]
@@ -183,6 +228,8 @@ def main() -> None:
     print("=" * 72)
     print(f"Project root: {BASE_DIR}")
     print(f"NSE input: {nse_input}")
+    print(f"Yahoo input: {yahoo_input}")
+    print(f"Report manifest: {report_manifest}")
     print(
         "Automated tests:",
         "skipped"

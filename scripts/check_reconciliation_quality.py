@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 import argparse
+import json
 import sys
 
 import numpy as np
@@ -245,6 +246,16 @@ def parse_args() -> argparse.Namespace:
     )
 
     parser.add_argument(
+        "--report-manifest",
+        type=Path,
+        default=None,
+        help=(
+            "Optional JSON manifest containing the exact "
+            "reconciliation report paths to validate."
+        ),
+    )
+
+    parser.add_argument(
         "--mapping",
         type=Path,
         default=DEFAULT_MAPPING,
@@ -274,6 +285,67 @@ def require_file(path: Path, label: str) -> None:
         raise ValueError(
             f"{label} is not a file: {path}"
         )
+
+
+def load_report_manifest(
+    manifest_path: Path,
+) -> dict[str, Path]:
+    require_file(
+        manifest_path,
+        "Report manifest",
+    )
+
+    try:
+        manifest_data = json.loads(
+            manifest_path.read_text(
+                encoding="utf-8"
+            )
+        )
+    except json.JSONDecodeError as exc:
+        raise ValueError(
+            f"Report manifest is not valid JSON: {manifest_path}"
+        ) from exc
+
+    if not isinstance(manifest_data, dict):
+        raise ValueError(
+            "Report manifest must contain a JSON object."
+        )
+
+    required_keys = (
+        "detail",
+        "summary",
+        "by_symbol",
+        "by_field",
+    )
+
+    missing_keys = [
+        key
+        for key in required_keys
+        if key not in manifest_data
+    ]
+
+    if missing_keys:
+        raise ValueError(
+            "Report manifest is missing required keys: "
+            f"{missing_keys}"
+        )
+
+    report_paths: dict[str, Path] = {}
+
+    for key in required_keys:
+        value = manifest_data[key]
+
+        if not isinstance(value, str) or not value.strip():
+            raise ValueError(
+                f"Report manifest value for '{key}' "
+                "must be a non-empty string."
+            )
+
+        report_paths[key] = resolve_project_path(
+            Path(value)
+        )
+
+    return report_paths
 
 
 def require_exact_schema(
@@ -1899,29 +1971,56 @@ def print_report(
 def main() -> None:
     args = parse_args()
 
-    detail_path = resolve_project_path(
-        args.detail
-    )
-
-    summary_path = resolve_project_path(
-        args.summary
-    )
-
-    symbol_summary_path = (
+    report_manifest_path = (
         resolve_project_path(
-            args.symbol_summary
+            args.report_manifest
         )
+        if args.report_manifest is not None
+        else None
     )
 
-    field_summary_path = (
-        resolve_project_path(
-            args.field_summary
+    if report_manifest_path is not None:
+        report_paths = load_report_manifest(
+            report_manifest_path
         )
-    )
+
+        detail_path = report_paths["detail"]
+        summary_path = report_paths["summary"]
+        symbol_summary_path = (
+            report_paths["by_symbol"]
+        )
+        field_summary_path = (
+            report_paths["by_field"]
+        )
+    else:
+        detail_path = resolve_project_path(
+            args.detail
+        )
+
+        summary_path = resolve_project_path(
+            args.summary
+        )
+
+        symbol_summary_path = (
+            resolve_project_path(
+                args.symbol_summary
+            )
+        )
+
+        field_summary_path = (
+            resolve_project_path(
+                args.field_summary
+            )
+        )
 
     mapping_path = resolve_project_path(
         args.mapping
     )
+
+    if report_manifest_path is not None:
+        print(
+            f"Report manifest: {report_manifest_path}"
+        )
 
     print(
         f"Detail report: {detail_path}"
