@@ -66,7 +66,7 @@ Project 1 currently has:
 - an independent reconciliation quality gate;
 - manifest-based validation of the exact reports produced by the current run;
 - configurable staged NSE and Yahoo inputs in the local runner;
-- 18 automated reconciliation tests;
+- 24 automated reconciliation tests;
 - a five-stage local end-to-end pipeline runner.
 
 The controlled reconciliation prototype currently covers:
@@ -82,7 +82,7 @@ Combined mismatches:     0
 Missing in NSE:          0
 Missing in Yahoo:        0
 Overall match rate:      100.00%
-Automated tests:         18 passed
+Automated tests:         24 passed
 Quality-gate result:     PASS
 End-to-end runner:       PASS
 ```
@@ -220,7 +220,7 @@ latest_report_manifest.json
 independent reconciliation quality gate
         |
         v
-18 automated reconciliation tests
+24 automated reconciliation tests
         |
         v
 local end-to-end pipeline result
@@ -496,7 +496,7 @@ It:
 - [x] Reconciliation schemas independently validated
 - [x] Reconciliation calculations independently recalculated
 - [x] Reconciliation summaries independently validated
-- [x] 18 automated reconciliation tests implemented
+- [x] 24 automated reconciliation tests implemented
 - [x] Positive and negative test scenarios passed
 - [x] Five-stage local pipeline runner implemented
 - [x] Staged NSE input made configurable in the local runner
@@ -1399,7 +1399,7 @@ Run the full test suite:
 python -m unittest discover -s tests -p "test_*.py" -v
 ```
 
-The 18 synthetic tests cover:
+The 24 automated reconciliation tests cover:
 
 - exact matches;
 - floating-point differences within absolute tolerance;
@@ -1418,13 +1418,19 @@ The 18 synthetic tests cover:
 - source-contract violations;
 - tampered difference calculations;
 - tampered classifications;
-- inconsistent summary reports.
+- inconsistent summary reports;
+- valid report-manifest loading;
+- missing report-manifest rejection;
+- malformed JSON manifest rejection;
+- missing required manifest-key rejection;
+- empty manifest-path rejection;
+- manifest references to missing report files.
 
 Verified result:
 
 ```text
-Tests run: 18
-Tests passed: 18
+Tests run: 24
+Tests passed: 24
 Failures: 0
 Errors: 0
 ```
@@ -1475,7 +1481,7 @@ During the run:
 - Stage 3 writes the exact four generated report paths to `staged/reconciliation/latest_report_manifest.json`;
 - Stage 4 reads that same manifest;
 - Stage 4 validates the exact outputs generated during Stage 3;
-- Stage 5 runs the 18 reconciliation tests unless `--skip-tests` is supplied.
+- Stage 5 runs the 24 reconciliation tests unless `--skip-tests` is supplied.
 
 This prevents the reconciliation quality gate from accidentally validating fixed or stale reports from a previous date window.
 
@@ -1522,8 +1528,8 @@ Staged NSE quality gate:          PASS
 Staged Yahoo quality gate:        PASS
 Reconciliation generation:        PASS
 Reconciliation quality gate:      PASS
-Automated tests:                  18 of 18 passed
-Total pipeline time:              approximately 4.00 seconds
+Automated tests:                  24 of 24 passed
+Total pipeline time:              approximately 5.14 seconds
 Final pipeline result:            PASS
 ```
 
@@ -1578,7 +1584,7 @@ The current milestone provides:
 - configurable staged NSE and Yahoo pipeline inputs;
 - manifest-based current-run report validation;
 - protection against stale-report false passes;
-- 18 automated reconciliation tests;
+- 24 automated reconciliation tests;
 - a fail-fast local pipeline runner.
 
 ## Next Steps

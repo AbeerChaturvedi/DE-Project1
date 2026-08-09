@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import json
+from pathlib import Path
+import tempfile
 import unittest
 
 import numpy as np
@@ -552,6 +555,228 @@ class ReconciliationQualityGateTests(
                 field_summary,
             )
 
+class ReconciliationManifestTests(
+    unittest.TestCase
+):
+    def write_manifest(
+        self,
+        directory: Path,
+        data: object,
+    ) -> Path:
+        manifest_path = (
+            directory
+            / "report_manifest.json"
+        )
+
+        manifest_path.write_text(
+            json.dumps(
+                data,
+                indent=2,
+            ),
+            encoding="utf-8",
+        )
+
+        return manifest_path
+
+    def make_valid_manifest_data(
+        self,
+        directory: Path,
+    ) -> dict[str, str]:
+        return {
+            "detail": str(
+                directory / "detail.csv"
+            ),
+            "summary": str(
+                directory / "summary.csv"
+            ),
+            "by_symbol": str(
+                directory / "by_symbol.csv"
+            ),
+            "by_field": str(
+                directory / "by_field.csv"
+            ),
+        }
+
+    def test_valid_manifest_loads_report_paths(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            directory = Path(temp_dir)
+
+            manifest_data = (
+                self.make_valid_manifest_data(
+                    directory
+                )
+            )
+
+            manifest_path = (
+                self.write_manifest(
+                    directory,
+                    manifest_data,
+                )
+            )
+
+            report_paths = (
+                quality.load_report_manifest(
+                    manifest_path
+                )
+            )
+
+            self.assertEqual(
+                report_paths["detail"],
+                Path(
+                    manifest_data["detail"]
+                ),
+            )
+
+            self.assertEqual(
+                report_paths["summary"],
+                Path(
+                    manifest_data["summary"]
+                ),
+            )
+
+            self.assertEqual(
+                report_paths["by_symbol"],
+                Path(
+                    manifest_data["by_symbol"]
+                ),
+            )
+
+            self.assertEqual(
+                report_paths["by_field"],
+                Path(
+                    manifest_data["by_field"]
+                ),
+            )
+
+    def test_missing_manifest_is_rejected(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            missing_manifest = (
+                Path(temp_dir)
+                / "missing_manifest.json"
+            )
+
+            with self.assertRaises(
+                FileNotFoundError
+            ):
+                quality.load_report_manifest(
+                    missing_manifest
+                )
+
+    def test_invalid_json_manifest_is_rejected(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            manifest_path = (
+                Path(temp_dir)
+                / "invalid_manifest.json"
+            )
+
+            manifest_path.write_text(
+                "{not valid json",
+                encoding="utf-8",
+            )
+
+            with self.assertRaises(
+                ValueError
+            ):
+                quality.load_report_manifest(
+                    manifest_path
+                )
+
+    def test_manifest_missing_required_key_is_rejected(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            directory = Path(temp_dir)
+
+            manifest_data = (
+                self.make_valid_manifest_data(
+                    directory
+                )
+            )
+
+            del manifest_data["by_field"]
+
+            manifest_path = (
+                self.write_manifest(
+                    directory,
+                    manifest_data,
+                )
+            )
+
+            with self.assertRaises(
+                ValueError
+            ):
+                quality.load_report_manifest(
+                    manifest_path
+                )
+
+    def test_manifest_empty_path_is_rejected(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            directory = Path(temp_dir)
+
+            manifest_data = (
+                self.make_valid_manifest_data(
+                    directory
+                )
+            )
+
+            manifest_data["summary"] = ""
+
+            manifest_path = (
+                self.write_manifest(
+                    directory,
+                    manifest_data,
+                )
+            )
+
+            with self.assertRaises(
+                ValueError
+            ):
+                quality.load_report_manifest(
+                    manifest_path
+                )
+
+    def test_manifest_missing_report_file_is_rejected(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            directory = Path(temp_dir)
+
+            manifest_data = (
+                self.make_valid_manifest_data(
+                    directory
+                )
+            )
+
+            manifest_path = (
+                self.write_manifest(
+                    directory,
+                    manifest_data,
+                )
+            )
+
+            report_paths = (
+                quality.load_report_manifest(
+                    manifest_path
+                )
+            )
+
+            with self.assertRaises(
+                FileNotFoundError
+            ):
+                quality.load_reports(
+                    report_paths["detail"],
+                    report_paths["summary"],
+                    report_paths["by_symbol"],
+                    report_paths["by_field"],
+                )
 
 if __name__ == "__main__":
     unittest.main()
